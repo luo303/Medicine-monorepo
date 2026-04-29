@@ -4,14 +4,7 @@ import tseslint from "typescript-eslint";
 import globals from "globals";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
-const ignores = [
-  "**/node_modules/**",
-  "**/dist/**",
-  "**/.next/**",
-  "**/coverage/**",
-  "**/*.d.ts",
-  "apps/**",
-];
+const ignores = ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/coverage/**", "**/*.d.ts", "apps/**"];
 
 export default defineConfig(
   {
@@ -20,9 +13,9 @@ export default defineConfig(
       parserOptions: {
         project: false,
         projectService: false,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -33,13 +26,13 @@ export default defineConfig(
       ecmaVersion: "latest",
       sourceType: "module",
       globals: {
-        ...globals.node,
+        ...globals.node
       },
       parserOptions: {
         project: false,
         projectService: false,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-  },
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
+  }
 );
