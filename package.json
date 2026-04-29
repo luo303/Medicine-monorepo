@@ -1,0 +1,38 @@
+{
+  "name": "monorepo-medicine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "pnpm --filter @medicine/frontend dev",
+    "dev:backend": "pnpm --filter @medicine/backend start:dev",
+    "build": "pnpm -r --if-present --filter \"./packages/*\" --filter \"./apps/*\" build",
+    "typecheck": "pnpm -r --if-present --filter \"./packages/*\" --filter \"./apps/*\" typecheck",
+    "test": "pnpm -r --if-present --filter \"./apps/*\" test",
+    "lint": "pnpm lint:eslint",
+    "lint:prettier": "prettier --write \"**/*.{js,ts,mjs,cjs,json,tsx,css,less,scss,vue,html,md}\"",
+    "lint:eslint": "pnpm -r --if-present --filter \"./apps/*\" lint",
+    "prepare": "husky",
+    "precommit": "lint-staged"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.25.0",
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.2",
+    "@commitlint/config-conventional": "^20.5.0",
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.10.7",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.59.1"
+  }
+}
