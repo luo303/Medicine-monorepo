@@ -15,7 +15,7 @@
     "lint:eslint": "pnpm -r --if-present --filter \"./apps/*\" lint",
     "prepare": "husky",
     "precommit": "lint-staged",
-    "commit": "cz-git"
+    "commit": "git-cz"
   },
   "lint-staged": {
     "*.{js,ts,mjs,cjs,tsx}": [
