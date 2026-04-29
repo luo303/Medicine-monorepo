@@ -1,2 +1,1 @@
-#!/usr/bin/env sh
-pnpm lint:prettier && pnpm lint:eslint
+pnpm lint-staged
