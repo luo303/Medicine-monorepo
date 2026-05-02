@@ -7,6 +7,10 @@
   "scripts": {
     "dev:frontend": "pnpm --filter @medicine/frontend dev",
     "dev:backend": "pnpm --filter @medicine/backend start:dev",
+    "build:frontend": "pnpm --filter @medicine/frontend build",
+    "build:backend": "pnpm --filter @medicine/backend build",
+    "start:frontend": "pnpm --filter @medicine/frontend start",
+    "start:backend": "pnpm --filter @medicine/backend start:prod",
     "build": "pnpm -r --if-present --filter \"./packages/*\" --filter \"./apps/*\" build",
     "typecheck": "pnpm -r --if-present --filter \"./packages/*\" --filter \"./apps/*\" typecheck",
     "test": "pnpm -r --if-present --filter \"./apps/*\" test",
