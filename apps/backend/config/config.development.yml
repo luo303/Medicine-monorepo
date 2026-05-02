@@ -1,0 +1,10 @@
+DB:
+  name: 'mysql-development'
+  type: 'mysql'
+  host: '127.0.0.1'
+  port: 3306
+  username: 'root'
+  password: 'example'
+  database: 'medicine'
+AI:
+  ZHIPU_API_KEY: 'b5b3c7533e49457985a2bcda0933af02.FgVs9NPWCfeJe07s'
