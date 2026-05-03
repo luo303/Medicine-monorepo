@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +82,7 @@ export default function ManufacturersClient({ manufacturers }: ManufacturersClie
     setDialogOpen(true);
   };
 
-  const openEditDialog = (manufacturer: Manufacturer) => {
+  const openEditDialog = useCallback((manufacturer: Manufacturer) => {
     setEditingManufacturer(manufacturer);
     setFormData({
       approval_no: manufacturer.approval_no,
@@ -94,7 +94,7 @@ export default function ManufacturersClient({ manufacturers }: ManufacturersClie
       is_gmp: manufacturer.is_gmp || false
     });
     setDialogOpen(true);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!formData.approval_no || !formData.name) {
@@ -129,21 +129,24 @@ export default function ManufacturersClient({ manufacturers }: ManufacturersClie
     }
   };
 
-  const handleDelete = async (approvalNo: string) => {
-    if (!confirm("确定要删除该企业吗？")) return;
+  const handleDelete = useCallback(
+    async (approvalNo: string) => {
+      if (!confirm("确定要删除该企业吗？")) return;
 
-    setDeleting(approvalNo);
-    try {
-      await deleteManufacturer(approvalNo);
-      await revalidateCache("manufacturers");
-      router.refresh();
-    } catch (error) {
-      console.error("删除失败:", error);
-      alert("删除失败，请重试");
-    } finally {
-      setDeleting(null);
-    }
-  };
+      setDeleting(approvalNo);
+      try {
+        await deleteManufacturer(approvalNo);
+        await revalidateCache("manufacturers");
+        router.refresh();
+      } catch (error) {
+        console.error("删除失败:", error);
+        alert("删除失败，请重试");
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [router]
+  );
 
   const handleExport = async () => {
     if (filteredData.length === 0) {
@@ -237,7 +240,7 @@ export default function ManufacturersClient({ manufacturers }: ManufacturersClie
         )
       }
     ],
-    [deleting]
+    [deleting, handleDelete, openEditDialog]
   );
 
   return (

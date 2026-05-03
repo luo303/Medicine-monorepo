@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +70,7 @@ export default function InstitutionsClient({ institutions }: InstitutionsClientP
     setDialogOpen(true);
   };
 
-  const openEditDialog = (institution: MedicalInstitution) => {
+  const openEditDialog = useCallback((institution: MedicalInstitution) => {
     setEditingInstitution(institution);
     setFormData({
       approval_no: institution.approval_no,
@@ -81,7 +81,7 @@ export default function InstitutionsClient({ institutions }: InstitutionsClientP
       is_specialized: institution.is_specialized || false
     });
     setDialogOpen(true);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!formData.approval_no || !formData.name) {
@@ -115,21 +115,24 @@ export default function InstitutionsClient({ institutions }: InstitutionsClientP
     }
   };
 
-  const handleDelete = async (approvalNo: string) => {
-    if (!confirm("确定要删除该机构吗？")) return;
+  const handleDelete = useCallback(
+    async (approvalNo: string) => {
+      if (!confirm("确定要删除该机构吗？")) return;
 
-    setDeleting(approvalNo);
-    try {
-      await deleteMedicalInstitution(approvalNo);
-      await revalidateCache("institutions");
-      router.refresh();
-    } catch (error) {
-      console.error("删除失败:", error);
-      alert("删除失败，请重试");
-    } finally {
-      setDeleting(null);
-    }
-  };
+      setDeleting(approvalNo);
+      try {
+        await deleteMedicalInstitution(approvalNo);
+        await revalidateCache("institutions");
+        router.refresh();
+      } catch (error) {
+        console.error("删除失败:", error);
+        alert("删除失败，请重试");
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [router]
+  );
 
   const handleExport = async () => {
     if (filteredData.length === 0) {
@@ -213,7 +216,7 @@ export default function InstitutionsClient({ institutions }: InstitutionsClientP
         )
       }
     ],
-    [deleting]
+    [deleting, handleDelete, openEditDialog]
   );
 
   return (

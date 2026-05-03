@@ -16,7 +16,7 @@
     "test": "pnpm -r --if-present --filter \"./apps/*\" test",
     "lint": "pnpm lint:eslint",
     "lint:prettier": "prettier --write \"**/*.{js,ts,mjs,cjs,json,tsx,css,less,scss,vue,html,md}\"",
-    "lint:eslint": "pnpm -r --if-present --filter \"./apps/*\" lint",
+    "lint:eslint": "pnpm -r --if-present --filter \"./apps/*\" --filter \"./packages/*\" lint",
     "prepare": "husky",
     "precommit": "lint-staged",
     "commit": "git-cz"

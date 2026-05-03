@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +66,7 @@ export default function DrugsClient({ drugs }: DrugsClientProps) {
     setDialogOpen(true);
   };
 
-  const openEditDialog = (drug: Drug) => {
+  const openEditDialog = useCallback((drug: Drug) => {
     setEditingDrug(drug);
     setFormData({
       approval_no: drug.approval_no,
@@ -77,7 +77,7 @@ export default function DrugsClient({ drugs }: DrugsClientProps) {
       is_prescription: drug.is_prescription || false
     });
     setDialogOpen(true);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!formData.approval_no || !formData.name) {
@@ -111,21 +111,24 @@ export default function DrugsClient({ drugs }: DrugsClientProps) {
     }
   };
 
-  const handleDelete = async (approvalNo: string) => {
-    if (!confirm("确定要删除该药品吗？")) return;
+  const handleDelete = useCallback(
+    async (approvalNo: string) => {
+      if (!confirm("确定要删除该药品吗？")) return;
 
-    setDeleting(approvalNo);
-    try {
-      await deleteDrug(approvalNo);
-      await revalidateCache("drugs");
-      router.refresh();
-    } catch (error) {
-      console.error("删除失败:", error);
-      alert("删除失败，请重试");
-    } finally {
-      setDeleting(null);
-    }
-  };
+      setDeleting(approvalNo);
+      try {
+        await deleteDrug(approvalNo);
+        await revalidateCache("drugs");
+        router.refresh();
+      } catch (error) {
+        console.error("删除失败:", error);
+        alert("删除失败，请重试");
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [router]
+  );
 
   const handleExport = async () => {
     if (filteredData.length === 0) {
@@ -220,7 +223,7 @@ export default function DrugsClient({ drugs }: DrugsClientProps) {
         )
       }
     ],
-    [deleting]
+    [deleting, handleDelete, openEditDialog]
   );
 
   return (

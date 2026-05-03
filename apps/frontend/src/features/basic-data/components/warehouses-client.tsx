@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,7 +106,7 @@ export default function WarehousesClient({ warehouses, storageLocations }: Wareh
     setDialogOpen(true);
   };
 
-  const openLocationDialog = (warehouseId: number, location?: StorageLocation) => {
+  const openLocationDialog = useCallback((warehouseId: number, location?: StorageLocation) => {
     setSelectedWarehouseId(warehouseId);
     if (location) {
       setEditingLocation(location);
@@ -122,7 +122,7 @@ export default function WarehousesClient({ warehouses, storageLocations }: Wareh
       setLocationForm(prev => ({ ...prev, warehouseId }));
     }
     setLocationDialogOpen(true);
-  };
+  }, []);
 
   const handleSaveWarehouse = async () => {
     if (!warehouseForm.code || !warehouseForm.name) {
@@ -201,21 +201,24 @@ export default function WarehousesClient({ warehouses, storageLocations }: Wareh
     }
   };
 
-  const handleDeleteLocation = async (id: number) => {
-    if (!confirm("确定要删除该货位吗？")) return;
+  const handleDeleteLocation = useCallback(
+    async (id: number) => {
+      if (!confirm("确定要删除该货位吗？")) return;
 
-    setDeleting(id);
-    try {
-      await deleteStorageLocation(id);
-      await revalidateCache("storage-locations");
-      router.refresh();
-    } catch (error) {
-      console.error("删除失败:", error);
-      alert("删除失败，请重试");
-    } finally {
-      setDeleting(null);
-    }
-  };
+      setDeleting(id);
+      try {
+        await deleteStorageLocation(id);
+        await revalidateCache("storage-locations");
+        router.refresh();
+      } catch (error) {
+        console.error("删除失败:", error);
+        alert("删除失败，请重试");
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [router]
+  );
 
   const handleExport = async () => {
     if (warehouses.length === 0) {
@@ -278,7 +281,7 @@ export default function WarehousesClient({ warehouses, storageLocations }: Wareh
         )
       }
     ],
-    [deleting]
+    [deleting, handleDeleteLocation, openLocationDialog]
   );
 
   return (
