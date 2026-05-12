@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
   reactStrictMode: false, //关闭严格模式
-  cacheComponents: true, //开启组件缓存
+  cacheComponents: true, //组件缓存
   allowedDevOrigins: ["10.60.228.*"]
 };
 

@@ -2,7 +2,6 @@ import type { ApiResponse } from "@medicine/shared";
 import type { Inventory, InventoryFlow } from "@/types/inventory";
 import type { PurchaseStorage } from "@/types/purchase";
 import type { SalesOutbound } from "@/types/sales";
-import { cacheTag, cacheLife } from "next/cache";
 import { API_BASE_URL } from "@/lib/api-config";
 
 async function fetchApi<T>(endpoint: string): Promise<T> {
@@ -21,24 +20,14 @@ async function fetchApi<T>(endpoint: string): Promise<T> {
 }
 
 export async function getInventories(): Promise<Inventory[]> {
-  "use cache";
-  cacheTag("inventories");
-  cacheLife("minutes");
   return fetchApi<Inventory[]>("/inventory");
 }
 
 export async function getInventory(id: number): Promise<Inventory> {
-  "use cache";
-  cacheTag("inventory", `inventory-${id}`);
-  cacheLife("minutes");
   return fetchApi<Inventory>(`/inventory/${id}`);
 }
 
 export async function getInventoryFlows(): Promise<InventoryFlow[]> {
-  "use cache";
-  cacheTag("inventory-flows");
-  cacheLife("minutes");
-
   const [purchaseStorages, salesOutbounds] = await Promise.all([
     fetchApi<PurchaseStorage[]>("/purchase/storage"),
     fetchApi<SalesOutbound[]>("/sales/outbound")

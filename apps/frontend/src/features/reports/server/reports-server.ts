@@ -1,4 +1,3 @@
-import { cacheLife } from "next/cache";
 import type { ApiResponse } from "@medicine/shared";
 import {
   type Manufacturer,
@@ -28,50 +27,34 @@ async function fetchApi<T>(endpoint: string): Promise<T> {
 }
 
 export async function getManufacturers(): Promise<Manufacturer[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<Manufacturer[]>("/manufacturer");
 }
 
 export async function getDrugs(): Promise<Drug[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<Drug[]>("/drug");
 }
 
 export async function getMedicalInstitutions(): Promise<MedicalInstitution[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<MedicalInstitution[]>("/MedicalInstitution");
 }
 
 export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<PurchaseOrder[]>("/purchase/order");
 }
 
 export async function getSalesOrders(): Promise<SalesOrder[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<SalesOrder[]>("/sales/order");
 }
 
 export async function getPurchaseStorages(): Promise<PurchaseStorage[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<PurchaseStorage[]>("/purchase/storage");
 }
 
 export async function getSalesOutbounds(): Promise<SalesOutbound[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<SalesOutbound[]>("/sales/outbound");
 }
 
 export async function getInventory(): Promise<Inventory[]> {
-  "use cache";
-  cacheLife("minutes");
   return fetchApi<Inventory[]>("/inventory");
 }
 
@@ -87,9 +70,6 @@ export interface AllReportsData {
 }
 
 export async function getAllReportsData(): Promise<AllReportsData> {
-  "use cache";
-  cacheLife("minutes");
-
   const [manufacturers, drugs, institutions, purchaseOrders, salesOrders, purchaseStorages, salesOutbounds, inventory] =
     await Promise.all([
       getManufacturers(),

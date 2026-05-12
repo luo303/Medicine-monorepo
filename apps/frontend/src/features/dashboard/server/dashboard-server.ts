@@ -1,5 +1,3 @@
-"use cache";
-import { cacheLife } from "next/cache";
 import type { ApiResponse, Inventory, PurchaseOrder, SalesOrder, Warehouse } from "@medicine/shared";
 import { API_BASE_URL } from "@/lib/api-config";
 
@@ -25,29 +23,21 @@ async function fetchApi<T>(endpoint: string): Promise<T | null> {
 }
 
 export async function getSalesOrders(): Promise<SalesOrder[]> {
-  "use cache";
-  cacheLife("minutes");
   const data = await fetchApi<SalesOrder[]>("/sales/order");
   return data || [];
 }
 
 export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
-  "use cache";
-  cacheLife("minutes");
   const data = await fetchApi<PurchaseOrder[]>("/purchase/order");
   return data || [];
 }
 
 export async function getInventory(): Promise<Inventory[]> {
-  "use cache";
-  cacheLife("minutes");
   const data = await fetchApi<Inventory[]>("/inventory");
   return data || [];
 }
 
 export async function getWarehouses(): Promise<Warehouse[]> {
-  "use cache";
-  cacheLife("minutes");
   const data = await fetchApi<Warehouse[]>("/warehouse");
   return data || [];
 }
