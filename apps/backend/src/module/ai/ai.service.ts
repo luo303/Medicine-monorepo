@@ -52,7 +52,7 @@ export class AiService implements OnModuleInit {
   init() {
     // ✅ 严格按照用户提供的初始化方式，不添加多余配置
     const model = new ChatOllama({
-      model: 'deepseek-v3.2:cloud',
+      model: 'gpt-oss:120b-cloud',
       temperature: 0,
     });
 

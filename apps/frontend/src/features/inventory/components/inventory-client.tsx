@@ -119,7 +119,6 @@ export function InventoryClient({ inventories }: InventoryClientProps) {
         key: "days_remaining",
         label: "剩余天数",
         width: 100,
-        align: "center",
         render: (_, item) => {
           const days = getDaysRemaining(item.expiry_date);
           let colorClass = "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20";
@@ -157,7 +156,6 @@ export function InventoryClient({ inventories }: InventoryClientProps) {
         key: "quantity",
         label: "数量",
         width: 100,
-        align: "right",
         render: value => <span className="font-bold text-teal-600">{value.toLocaleString()}</span>
       }
     ],

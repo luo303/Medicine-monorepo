@@ -49,7 +49,7 @@ function VirtualRowInner<T>({
       case "right":
         return "justify-end text-right";
       default:
-        return "justify-start text-left";
+        return "jjustify-center text-center";
     }
   };
 
@@ -74,7 +74,7 @@ function VirtualRowInner<T>({
               key={col.key}
               role="cell"
               style={widthStyle}
-              className={`flex items-center h-full px-4 ${getAlignClass(col.align)}`}
+              className={`flex flex-1 items-center h-full px-4 ${getAlignClass(col.align)}`}
             >
               <div className="w-full truncate text-[13px] text-slate-800 dark:text-slate-200">
                 {col.render ? col.render(value, item, index) : (value ?? "-")}
@@ -141,7 +141,7 @@ function VirtualTableInner<T extends Record<string, any>>({
       case "right":
         return "justify-end text-right";
       default:
-        return "justify-start text-left";
+        return "justify-center text-center";
     }
   }, []);
 
@@ -175,7 +175,7 @@ function VirtualTableInner<T extends Record<string, any>>({
   return (
     <div ref={containerRef} className="flex flex-col h-full">
       <div
-        className="flex items-center border-b border-slate-200/60 dark:border-slate-700/40 bg-slate-100 dark:bg-slate-800 overflow-y-scroll scrollbar-thin scrollbar-track-transparent"
+        className="flex items-center border-b border-slate-200/60 dark:border-slate-700/40 bg-slate-100 dark:bg-slate-800"
         style={{ height: headerHeight }}
       >
         {columns.map(col => {
@@ -187,7 +187,7 @@ function VirtualTableInner<T extends Record<string, any>>({
             <div
               key={col.key}
               style={widthStyle}
-              className={`flex items-center h-full px-4 ${getAlignClass(col.align)}`}
+              className={`flex flex-1 items-center h-full px-4 ${getAlignClass(col.align)}`}
             >
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">
                 {col.label}

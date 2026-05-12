@@ -40,16 +40,18 @@ export class AiController {
       const events = await this.aiService.agent.stream(input, {
         streamMode: 'messages',
       });
-
       for await (const [token, metadata] of events) {
         // ✅ 严格过滤：如果是 tools 节点（工具执行结果），不响应给前端
         // 这样 AI 能获取文档内容进行思考，但前端不会收到冗长的文档原文
+        console.log('token', token);
+        console.log('metadata', metadata);
+
         if (metadata?.langgraph_node === 'tools') {
           continue;
         }
 
         const content = token.contentBlocks || token.content;
-
+        console.log('content', content);
         // ✅ 避免重复包装：如果 content 是数组（通常是 contentBlocks），直接发送数组内的对象
         if (Array.isArray(content)) {
           for (const block of content) {

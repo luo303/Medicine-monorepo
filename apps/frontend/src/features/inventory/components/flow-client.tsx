@@ -124,7 +124,6 @@ export function FlowClient({ flows }: FlowClientProps) {
         key: "quantity",
         label: "数量",
         width: 100,
-        align: "right",
         render: value => {
           const isNegative = value < 0;
           return (

@@ -94,7 +94,6 @@ export default function PurchaseOrderListClient({ orders }: PurchaseOrderListCli
         key: "total_amount",
         label: "总金额",
         width: 120,
-        align: "right",
         render: value => <span className="font-mono">¥{parseFloat(value).toLocaleString()}</span>
       },
       {
