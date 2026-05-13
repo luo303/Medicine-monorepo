@@ -19,3 +19,8 @@ export async function revalidateCache(tag: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function revalidateCaches(tags: string[]): Promise<boolean> {
+  const results = await Promise.all(tags.map(tag => revalidateCache(tag)));
+  return results.every(Boolean);
+}

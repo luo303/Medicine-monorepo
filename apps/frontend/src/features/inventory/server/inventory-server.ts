@@ -1,22 +1,10 @@
-import type { ApiResponse } from "@medicine/shared";
 import type { Inventory, InventoryFlow } from "@/types/inventory";
 import type { PurchaseStorage } from "@/types/purchase";
-import type { SalesOutbound } from "@/types/sales";
-import { API_BASE_URL } from "@/lib/api-config";
+import type { SalesOutboundRecord } from "@/types/sales";
+import { fetchServerApi } from "@/lib/server-fetch";
 
 async function fetchApi<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
-  }
-
-  const result: ApiResponse<T> = await response.json();
-  return result.data;
+  return fetchServerApi<T>(endpoint);
 }
 
 export async function getInventories(): Promise<Inventory[]> {
@@ -30,7 +18,7 @@ export async function getInventory(id: number): Promise<Inventory> {
 export async function getInventoryFlows(): Promise<InventoryFlow[]> {
   const [purchaseStorages, salesOutbounds] = await Promise.all([
     fetchApi<PurchaseStorage[]>("/purchase/storage"),
-    fetchApi<SalesOutbound[]>("/sales/outbound")
+    fetchApi<SalesOutboundRecord[]>("/sales/outbound")
   ]);
 
   const flows: InventoryFlow[] = [];
@@ -52,17 +40,17 @@ export async function getInventoryFlows(): Promise<InventoryFlow[]> {
   });
 
   salesOutbounds.forEach(outbound => {
-    (outbound.details || []).forEach(detail => {
-      flows.push({
-        id: idCounter++,
-        date: outbound.outbound_date,
-        type: "销售出库",
-        order_no: outbound.order_no,
-        drug_name: detail.drug_name,
-        batch_no: detail.batch_number,
-        quantity: -detail.outbound_quantity,
-        operator: outbound.salesperson || "系统"
-      });
+    flows.push({
+      id: idCounter++,
+      date: outbound.outbound_date,
+      type: "销售出库",
+      order_no: outbound.orderNo,
+      drug_name: outbound.drug_name,
+      batch_no: "",
+      quantity: -outbound.quantity,
+      operator: outbound.salesperson || "系统",
+      warehouse_code: outbound.warehouse_code,
+      location_code: outbound.location_code
     });
   });
 

@@ -1,20 +1,8 @@
-import type { ApiResponse } from "@medicine/shared";
-import type { SalesOrder, SalesOutbound } from "@/types/sales";
-import { API_BASE_URL } from "@/lib/api-config";
+import type { SalesOrder, SalesDetail, SalesOutboundRecord } from "@/types/sales";
+import { fetchServerApi } from "@/lib/server-fetch";
 
 async function fetchApi<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
-  }
-
-  const result: ApiResponse<T> = await response.json();
-  return result.data;
+  return fetchServerApi<T>(endpoint);
 }
 
 export async function getSalesOrders(): Promise<SalesOrder[]> {
@@ -25,10 +13,18 @@ export async function getSalesOrder(orderNo: string): Promise<SalesOrder> {
   return fetchApi<SalesOrder>(`/sales/order/${orderNo}`);
 }
 
-export async function getSalesOutbounds(): Promise<SalesOutbound[]> {
-  return fetchApi<SalesOutbound[]>("/sales/outbound");
+export async function getSalesDetails(): Promise<SalesDetail[]> {
+  return fetchApi<SalesDetail[]>("/sales/detail");
 }
 
-export async function getSalesOutbound(id: number): Promise<SalesOutbound> {
-  return fetchApi<SalesOutbound>(`/sales/outbound/${id}`);
+export async function getSalesDetail(id: number): Promise<SalesDetail> {
+  return fetchApi<SalesDetail>(`/sales/detail/${id}`);
+}
+
+export async function getSalesOutbounds(): Promise<SalesOutboundRecord[]> {
+  return fetchApi<SalesOutboundRecord[]>("/sales/outbound");
+}
+
+export async function getSalesOutbound(id: number): Promise<SalesOutboundRecord> {
+  return fetchApi<SalesOutboundRecord>(`/sales/outbound/${id}`);
 }

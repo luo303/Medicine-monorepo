@@ -1,51 +1,89 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  uploadKnowledgeFile,
+  clearKnowledgeFiles,
   getKnowledgeFiles,
+  uploadKnowledgeFile,
   type KnowledgeFile,
   type UploadProgress
 } from "@/features/assistant/lib/knowledge";
 
+const ALLOWED_TYPES = [".txt", ".md", ".pdf", ".docx"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+function formatFileSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function KnowledgePanel() {
-  // 知识库文件上传相关状态
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "success" | "error">("idle");
   const [uploadMessage, setUploadMessage] = useState("");
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [clearingFiles, setClearingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 允许的文件类型
-  const ALLOWED_TYPES = [".txt", ".md", ".pdf", ".docx"];
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-  // 验证文件
   const validateFile = (file: File): string | null => {
-    const fileExt = "." + file.name.split(".").pop()?.toLowerCase();
+    const fileExt = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+
     if (!ALLOWED_TYPES.includes(fileExt)) {
-      return `不支持的文件格式，仅支持：${ALLOWED_TYPES.join(", ")}`;
+      return `仅支持 ${ALLOWED_TYPES.join("、")} 格式的文件`;
     }
+
     if (file.size > MAX_FILE_SIZE) {
       return "文件大小不能超过 10MB";
     }
+
     return null;
   };
 
-  // 处理文件上传
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const resetStatusLater = useCallback(() => {
+    window.setTimeout(() => {
+      setUploadStatus("idle");
+      setUploadMessage("");
+    }, 3000);
+  }, []);
 
-    // 验证文件
+  const loadKnowledgeFiles = useCallback(async () => {
+    setLoadingFiles(true);
+
+    try {
+      const files = await getKnowledgeFiles();
+      setKnowledgeFiles(files);
+    } catch (error) {
+      console.error("加载知识库文件失败:", error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadKnowledgeFiles();
+  }, [loadKnowledgeFiles]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
     const error = validateFile(file);
     if (error) {
       setUploadStatus("error");
       setUploadMessage(error);
-      setTimeout(() => {
-        setUploadStatus("idle");
-        setUploadMessage("");
-      }, 3000);
+      resetStatusLater();
+
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -57,86 +95,104 @@ export default function KnowledgePanel() {
     setUploadStatus("idle");
 
     try {
-      // 使用封装的 axios API 上传文件
-      const result = await uploadKnowledgeFile(file, (progress: UploadProgress) => {
+      await uploadKnowledgeFile(file, (progress: UploadProgress) => {
         setUploadProgress(progress.progress);
       });
 
-      setKnowledgeFiles(prev => [...prev, result]);
+      await loadKnowledgeFiles();
       setUploadStatus("success");
-      setUploadMessage("文件上传成功！");
-      setTimeout(() => {
-        setUploadStatus("idle");
-        setUploadMessage("");
-      }, 3000);
-    } catch (error) {
-      console.error("上传错误:", error);
+      setUploadMessage("文件上传成功");
+      resetStatusLater();
+    } catch (uploadError) {
+      console.error("上传知识库文件失败:", uploadError);
       setUploadStatus("error");
-      setUploadMessage(`上传失败：${(error as Error).message}`);
-      setTimeout(() => {
-        setUploadStatus("idle");
-        setUploadMessage("");
-      }, 3000);
+      setUploadMessage(`上传失败：${(uploadError as Error).message}`);
+      resetStatusLater();
     } finally {
       setUploading(false);
       setUploadProgress(0);
+
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
   };
 
-  // 加载知识库文件列表
-  useEffect(() => {
-    const loadKnowledgeFiles = async () => {
-      try {
-        const files = await getKnowledgeFiles();
-        if (files) {
-          setKnowledgeFiles(files);
-        }
-      } catch (error) {
-        console.error("加载知识库文件失败:", error);
-      }
-    };
+  const handleClearKnowledge = async () => {
+    if (!knowledgeFiles.length) {
+      return;
+    }
 
-    loadKnowledgeFiles();
-  }, []);
+    if (!confirm("确定要清空全部知识库文件吗？该操作无法撤销。")) {
+      return;
+    }
+
+    setClearingFiles(true);
+    try {
+      await clearKnowledgeFiles();
+      setKnowledgeFiles([]);
+      setUploadStatus("success");
+      setUploadMessage("知识库已清空");
+      resetStatusLater();
+    } catch (clearError) {
+      console.error("清空知识库失败:", clearError);
+      setUploadStatus("error");
+      setUploadMessage(`清空失败：${(clearError as Error).message}`);
+      resetStatusLater();
+    } finally {
+      setClearingFiles(false);
+    }
+  };
 
   return (
-    <div className="w-96 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col">
-      {/* 标题栏 */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-            />
-          </svg>
-          知识库管理
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">上传文件到知识库，AI 将基于知识库内容回答</p>
+    <div className="flex w-96 flex-col border-l border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+      <div className="border-b border-gray-200 p-4 dark:border-gray-700">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                />
+              </svg>
+              知识库文件
+            </h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              上传业务资料后，AI 问答会优先结合这些内容进行检索和回答。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearKnowledge}
+            disabled={!knowledgeFiles.length || clearingFiles}
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 transition hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
+          >
+            {clearingFiles ? "清空中..." : "清空全部"}
+          </button>
+        </div>
       </div>
 
-      {/* 上传区域 */}
-      <div className="p-4 flex-1 overflow-y-auto">
-        {/* 文件上传框 */}
+      <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">上传文件</label>
+          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">上传文件</label>
           <div
-            className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer
-                            ${
-                              uploading
-                                ? "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20"
-                                : uploadStatus === "success"
-                                  ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
-                                  : uploadStatus === "error"
-                                    ? "border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/20"
-                                    : "border-gray-300 hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
-                            }`}
-            onClick={() => !uploading && fileInputRef.current?.click()}
+            className={`relative cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+              uploading
+                ? "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20"
+                : uploadStatus === "success"
+                  ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
+                  : uploadStatus === "error"
+                    ? "border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/20"
+                    : "border-gray-300 hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
+            }`}
+            onClick={() => {
+              if (!uploading) {
+                fileInputRef.current?.click();
+              }
+            }}
           >
             <input
               ref={fileInputRef}
@@ -147,19 +203,18 @@ export default function KnowledgePanel() {
               disabled={uploading}
             />
 
-            {/* 图标 */}
-            <div className="flex justify-center mb-3">
+            <div className="mb-3 flex justify-center">
               {uploading ? (
-                <svg className="w-10 h-10 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <svg className="h-10 w-10 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path
                     className="opacity-75"
                     fill="currentColor"
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
+                  />
                 </svg>
               ) : uploadStatus === "success" ? (
-                <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -168,7 +223,7 @@ export default function KnowledgePanel() {
                   />
                 </svg>
               ) : uploadStatus === "error" ? (
-                <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -178,7 +233,7 @@ export default function KnowledgePanel() {
                 </svg>
               ) : (
                 <svg
-                  className="w-10 h-10 text-gray-400 dark:text-gray-500"
+                  className="h-10 w-10 text-gray-400 dark:text-gray-500"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -193,58 +248,63 @@ export default function KnowledgePanel() {
               )}
             </div>
 
-            {/* 文字说明 */}
             {uploading ? (
               <div>
-                <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">正在上传...</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">请稍候，正在处理文件</p>
+                <p className="mb-1 text-sm font-medium text-blue-600 dark:text-blue-400">上传中...</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">文件会自动切分并写入知识库。</p>
               </div>
             ) : uploadStatus === "success" ? (
               <div>
-                <p className="text-sm font-medium text-green-600 dark:text-green-400 mb-1">{uploadMessage}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">文件已成功上传到知识库</p>
+                <p className="mb-1 text-sm font-medium text-green-600 dark:text-green-400">{uploadMessage}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">现在可以在右侧对话中直接引用这些资料。</p>
               </div>
             ) : uploadStatus === "error" ? (
               <div>
-                <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">{uploadMessage}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">请重试或检查文件格式</p>
+                <p className="mb-1 text-sm font-medium text-red-600 dark:text-red-400">{uploadMessage}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">请检查文件格式或大小后重新上传。</p>
               </div>
             ) : (
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">点击或拖拽文件到此处上传</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">支持 .txt, .md, .pdf, .docx 格式，最大 10MB</p>
+                <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  点击选择文件，或拖拽文件到这里上传
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  支持 .txt、.md、.pdf、.docx，单个文件不超过 10MB
+                </p>
               </div>
             )}
           </div>
 
-          {/* 进度条 */}
           {uploading && (
             <div className="mt-3">
-              <div className="flex justify-between text-xs mb-1">
+              <div className="mb-1 flex justify-between text-xs">
                 <span className="text-gray-600 dark:text-gray-400">上传进度</span>
                 <span className="font-medium text-blue-600 dark:text-blue-400">{uploadProgress}%</span>
               </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                 <div
-                  className="bg-linear-to-r from-blue-500 to-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                  className="h-full rounded-full bg-linear-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out"
                   style={{ width: `${uploadProgress}%` }}
-                ></div>
+                />
               </div>
             </div>
           )}
         </div>
 
-        {/* 文件列表 */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">知识库文件</label>
+          <div className="mb-2 flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">已上传文件</label>
             <span className="text-xs text-gray-500 dark:text-gray-400">{knowledgeFiles.length} 个文件</span>
           </div>
 
-          {knowledgeFiles.length === 0 ? (
-            <div className="text-center py-8 px-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl">
+          {loadingFiles ? (
+            <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+              正在加载文件列表...
+            </div>
+          ) : knowledgeFiles.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-600">
               <svg
-                className="w-12 h-12 mx-auto text-gray-400 dark:text-gray-500 mb-2"
+                className="mx-auto mb-2 h-12 w-12 text-gray-400 dark:text-gray-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -256,19 +316,20 @@ export default function KnowledgePanel() {
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                 />
               </svg>
-              <p className="text-sm text-gray-500 dark:text-gray-400">暂无知识库文件</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">上传第一个文件开始使用知识库</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">还没有上传任何知识库文件</p>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                上传文件后，这些资料会被用于智能检索和问答。
+              </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {knowledgeFiles.map((file, index) => (
+            <div className="max-h-96 space-y-2 overflow-y-auto">
+              {knowledgeFiles.map(file => (
                 <div
-                  key={file.id || index}
-                  className="group flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 transition-all shadow-sm hover:shadow-md"
+                  key={file.id}
+                  className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-600"
                 >
-                  {/* 文件图标 */}
-                  <div className="shrink-0 w-10 h-10 bg-linear-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-blue-500 to-blue-600">
+                    <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -278,17 +339,16 @@ export default function KnowledgePanel() {
                     </svg>
                   </div>
 
-                  {/* 文件信息 */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{file.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {(file.size / 1024).toFixed(2)} KB · {new Date(file.uploadedAt).toLocaleDateString("zh-CN")}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{file.name}</p>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {formatFileSize(file.size)} · {file.chunks} 个分片 ·{" "}
+                      {new Date(file.uploadedAt).toLocaleDateString("zh-CN")}
                     </p>
                   </div>
 
-                  {/* 成功标识 */}
                   <div className="shrink-0">
-                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>

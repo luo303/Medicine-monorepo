@@ -1,4 +1,22 @@
-export type { Institution, SalesDetail, SalesOrder, SalesOutbound, SalesOutboundDetail } from "@medicine/shared";
+export type { Institution, SalesDetail, SalesOrder } from "@medicine/shared";
+
+export interface SalesOutboundRecord {
+  id: number;
+  warehouse_code: string;
+  location_code: string;
+  orderNo: string;
+  outbound_date: string;
+  institutionApprovalNo: string;
+  manufacturerApprovalNo?: string;
+  drugApprovalNo: string;
+  drug_name: string;
+  production_date: string;
+  quantity: number;
+  salesperson?: string;
+  inspector?: string;
+  keeper?: string;
+  create_time?: string;
+}
 
 export const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
   全部出库: {

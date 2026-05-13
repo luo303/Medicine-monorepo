@@ -1,6 +1,3 @@
-/**
- * 知识库相关 API 服务
- */
 import apiClient from "./axios";
 
 export interface KnowledgeFile {
@@ -8,6 +5,7 @@ export interface KnowledgeFile {
   name: string;
   size: number;
   uploadedAt: string;
+  chunks: number;
 }
 
 export interface UploadProgress {
@@ -17,18 +15,38 @@ export interface UploadProgress {
 }
 
 export interface UploadResult {
-  id: string;
-  name: string;
-  size: number;
-  uploadedAt: string;
+  success: boolean;
+  chunks: number;
+  filename: string;
 }
 
-/**
- * 上传知识库文件
- * @param file 要上传的文件
- * @param onProgress 进度回调函数
- * @returns 上传结果
- */
+interface KnowledgeUploadResponse {
+  success: boolean;
+  message: string;
+  data?: UploadResult;
+}
+
+interface KnowledgeFileResponse {
+  id: string;
+  filename: string;
+  originalName: string;
+  size: number;
+  chunks: number;
+  uploadTime: string;
+}
+
+interface KnowledgeFileListResponse {
+  success: boolean;
+  data: KnowledgeFileResponse[];
+  message: string;
+}
+
+interface KnowledgeClearResponse {
+  success: boolean;
+  message: string;
+  data: null;
+}
+
 export function uploadKnowledgeFile(
   file: File,
   onProgress?: (progress: UploadProgress) => void
@@ -37,9 +55,8 @@ export function uploadKnowledgeFile(
     const formData = new FormData();
     formData.append("file", file);
 
-    // 使用 axios 上传文件
     apiClient
-      .post("/knowledge/upload", formData, {
+      .post<KnowledgeUploadResponse>("/knowledge/upload", formData, {
         headers: {
           "Content-Type": "multipart/form-data"
         },
@@ -54,12 +71,12 @@ export function uploadKnowledgeFile(
         }
       })
       .then(response => {
-        resolve({
-          id: response.data.id || `file_${Date.now()}`,
-          name: file.name,
-          size: file.size,
-          uploadedAt: new Date().toISOString()
-        });
+        if (!response.data.data?.success || !response.data.data) {
+          reject(new Error(response.data.message || "Upload failed"));
+          return;
+        }
+
+        resolve(response.data.data);
       })
       .catch(error => {
         reject(error);
@@ -67,26 +84,25 @@ export function uploadKnowledgeFile(
   });
 }
 
-/**
- * 获取知识库文件列表
- * @returns 文件列表
- */
 export async function getKnowledgeFiles(): Promise<KnowledgeFile[]> {
-  const response = await apiClient.get("/knowledge/files");
-  return response.data.files || [];
+  const response = await apiClient.get<KnowledgeFileListResponse>("/knowledge/files");
+  return (response.data.data || []).map(file => ({
+    id: file.id,
+    name: file.originalName || file.filename,
+    size: file.size,
+    uploadedAt: file.uploadTime,
+    chunks: file.chunks
+  }));
 }
 
-/**
- * 删除知识库文件
- * @param fileId 文件 ID
- */
-export async function deleteKnowledgeFile(fileId: string): Promise<void> {
-  await apiClient.delete(`/knowledge/files/${fileId}`);
+export async function deleteKnowledgeFile(): Promise<void> {
+  throw new Error("Delete knowledge file endpoint is not available");
 }
 
-/**
- * 清空知识库
- */
 export async function clearKnowledgeFiles(): Promise<void> {
-  await apiClient.post("/knowledge/clear");
+  const response = await apiClient.post<KnowledgeClearResponse>("/knowledge/clear");
+
+  if (!response.data.success) {
+    throw new Error(response.data.message || "Failed to clear knowledge base");
+  }
 }

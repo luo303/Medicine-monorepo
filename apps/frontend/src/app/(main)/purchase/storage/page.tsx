@@ -1,12 +1,21 @@
+import { Suspense } from "react";
+import ReportsLoading from "@/app/(main)/reports/loading";
+import { getStorageLocations, getWarehouses } from "@/features/basic-data/server/basic-data-server";
 import PurchaseStorageClient from "@/features/purchase/components/storage-client";
 import { getPurchaseOrders } from "@/features/purchase/server/purchase-server";
-import ReportsLoading from "@/app/(main)/reports/loading";
-import { Suspense } from "react";
+
 async function PurchaseStorageLoader() {
-  const orders = await getPurchaseOrders();
-  const pendingOrders = orders.filter(o => o.status === "已审核" || o.status === "部分入库");
-  return <PurchaseStorageClient orders={pendingOrders} />;
+  const [orders, warehouses, storageLocations] = await Promise.all([
+    getPurchaseOrders(),
+    getWarehouses(),
+    getStorageLocations()
+  ]);
+
+  const pendingOrders = orders.filter(order => order.status === "已审核" || order.status === "部分入库");
+
+  return <PurchaseStorageClient orders={pendingOrders} warehouses={warehouses} storageLocations={storageLocations} />;
 }
+
 export default async function PurchaseStoragePage() {
   return (
     <Suspense fallback={<ReportsLoading />}>
