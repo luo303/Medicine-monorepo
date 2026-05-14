@@ -1,13 +1,18 @@
+import { Type } from 'class-transformer';
 import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsEnum,
-  IsNumber,
+  ArrayMinSize,
+  IsArray,
   IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
   Length,
+  ValidateNested,
 } from 'class-validator';
 import { PurchaseOrderStatus } from '@/entity/PurchaseOrder';
+import { CreatePurchaseOrderDetailDto } from './purchase-detail.dto';
 
 export class CreatePurchaseOrderDto {
   @IsString({ message: '采购单号必须是字符串' })
@@ -38,9 +43,16 @@ export class CreatePurchaseOrderDto {
   @Length(0, 50, { message: '采购员长度不能超过 50' })
   purchaser?: string;
 
-  @IsEnum(PurchaseOrderStatus, { message: '无效的订单状态' })
+  @IsEnum(PurchaseOrderStatus, { message: '采购订单状态不合法' })
   @IsOptional()
   status?: PurchaseOrderStatus;
+
+  @IsArray({ message: '采购明细必须是数组' })
+  @ArrayMinSize(1, { message: '至少需要一条采购明细' })
+  @ValidateNested({ each: true })
+  @Type(() => CreatePurchaseOrderDetailDto)
+  @IsOptional()
+  purchaseDetails?: CreatePurchaseOrderDetailDto[];
 }
 
 export class UpdatePurchaseOrderDto {
@@ -62,7 +74,7 @@ export class UpdatePurchaseOrderDto {
   @Length(0, 50, { message: '采购员长度不能超过 50' })
   purchaser?: string;
 
-  @IsEnum(PurchaseOrderStatus, { message: '无效的订单状态' })
+  @IsEnum(PurchaseOrderStatus, { message: '采购订单状态不合法' })
   @IsOptional()
   status?: PurchaseOrderStatus;
 }

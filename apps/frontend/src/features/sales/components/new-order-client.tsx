@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { revalidateCaches } from "@/lib/cache-client";
-import { createSalesDetail, createSalesOrder } from "@/lib/api-client";
+import { createSalesOrder } from "@/lib/api-client";
 import { EmptyState } from "@/components/empty-state";
 import type { Inventory } from "@/types/inventory";
 import type { SalesOrder } from "@/types/sales";
@@ -73,6 +73,7 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
         inventory: item
       }));
   }, [inventories]);
+  const hasInventoryOptions = inventoryOptions.length > 0;
 
   const totalAmount = useMemo(() => {
     return salesItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -154,22 +155,16 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
         institutionApprovalNo: institution.approval_no,
         institution_name: institution.name,
         total_amount: totalAmount,
-        salesperson
+        salesperson,
+        salesDetails: salesItems.map(item => ({
+          manufacturerApprovalNo: item.manufacturerApprovalNo,
+          drugApprovalNo: item.drugApprovalNo,
+          drug_name: item.drug_name,
+          production_date: item.production_date,
+          quantity: item.quantity,
+          unit_price: item.unit_price
+        }))
       });
-
-      await Promise.all(
-        salesItems.map(item =>
-          createSalesDetail({
-            orderNo: nextOrderNo,
-            manufacturerApprovalNo: item.manufacturerApprovalNo,
-            drugApprovalNo: item.drugApprovalNo,
-            drug_name: item.drug_name,
-            production_date: item.production_date,
-            quantity: item.quantity,
-            unit_price: item.unit_price
-          })
-        )
-      );
 
       await revalidateCaches([CACHE_TAGS.salesOrders, CACHE_TAGS.salesDetails]);
       alert(mode === "save" ? "销售单已保存" : "销售单已创建");
@@ -244,14 +239,24 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/60 bg-white dark:border-slate-700/40 dark:bg-slate-800/60">
         <div className="flex items-center justify-between border-b border-slate-200/60 p-4 dark:border-slate-700/40">
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">药品明细</h3>
-          <Button variant="outline" size="sm" className="h-7" onClick={handleAddDrug}>
-            添加药品
-          </Button>
+          <div className="flex items-center gap-3">
+            {!hasInventoryOptions ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">暂无可销售库存，请先完成采购入库</span>
+            ) : null}
+            <Button variant="outline" size="sm" className="h-7" onClick={handleAddDrug} disabled={!hasInventoryOptions}>
+              添加药品
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto">
           {salesItems.length === 0 ? (
-            <EmptyState title="暂无销售明细" description="请点击上方按钮添加药品" />
+            <EmptyState
+              title={hasInventoryOptions ? "暂无销售明细" : "暂无可销售库存"}
+              description={
+                hasInventoryOptions ? "请点击上方按钮添加药品" : "当前没有可用库存批次，请先完成采购入库后再创建销售单"
+              }
+            />
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
@@ -269,19 +274,34 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
                 {salesItems.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20">
-                    <td className="px-4 py-3">
-                      <Select value={item.inventoryId} onValueChange={value => handleInventorySelect(item.id, value)}>
-                        <SelectTrigger className="w-72 h-8">
-                          <SelectValue placeholder="选择库存批次" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {inventoryOptions.map(option => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <td className="px-4 py-3 align-top">
+                      <div className="space-y-1 text-left">
+                        <Select
+                          value={item.inventoryId}
+                          disabled={!hasInventoryOptions}
+                          onValueChange={value => handleInventorySelect(item.id, value)}
+                        >
+                          <SelectTrigger className="h-8 w-72">
+                            <SelectValue placeholder={hasInventoryOptions ? "选择库存批次" : "暂无可销售库存"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {hasInventoryOptions ? (
+                              inventoryOptions.map(option => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="px-2 py-1.5 text-sm text-slate-500">暂无可销售库存，请先完成采购入库</div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {!hasInventoryOptions ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            当前没有可用库存批次，请先完成采购入库
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-medium">{item.drug_name || "-"}</td>
                     <td className="px-4 py-3 text-slate-600">{item.production_date || "-"}</td>
@@ -292,6 +312,7 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
                       <Input
                         type="number"
                         className="h-8 w-24 text-right"
+                        disabled={!hasInventoryOptions || !item.inventoryId}
                         value={item.quantity}
                         min={1}
                         max={item.availableQuantity || 1}
@@ -308,6 +329,7 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
                         type="number"
                         step="0.01"
                         className="h-8 w-24 text-right"
+                        disabled={!hasInventoryOptions || !item.inventoryId}
                         value={item.unit_price}
                         min={0}
                         onChange={e =>

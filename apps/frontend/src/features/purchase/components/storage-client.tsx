@@ -7,13 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { revalidateCaches } from "@/lib/cache-client";
-import {
-  createInventory,
-  createPurchaseStorage,
-  getInventoryRecords,
-  updateInventory,
-  updatePurchaseOrder
-} from "@/lib/api-client";
+import { submitPurchaseStorage } from "@/lib/api-client";
 import type { StorageLocation, Warehouse } from "@/types/basic-data";
 import type { PurchaseDetail, PurchaseOrder } from "@/types/purchase";
 
@@ -21,12 +15,6 @@ interface PurchaseStorageClientProps {
   orders: PurchaseOrder[];
   warehouses: Warehouse[];
   storageLocations: StorageLocation[];
-}
-
-function addMonths(dateString: string, months: number): string {
-  const date = new Date(dateString);
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString().split("T")[0];
 }
 
 export default function PurchaseStorageClient({ orders, warehouses, storageLocations }: PurchaseStorageClientProps) {
@@ -66,13 +54,12 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
 
         return {
           value: `${warehouseCode}|${location.code}`,
-          label: `${warehouseCode} / ${location.code}`,
-          warehouseCode,
-          locationCode: location.code
+          label: `${warehouseCode} / ${location.code}`
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
   }, [storageLocations, warehouseCodeById]);
+  const hasLocationOptions = locationOptions.length > 0;
 
   const details = selectedOrder?.purchaseDetails ?? [];
   const existingStorages = selectedOrder?.purchaseStorages ?? [];
@@ -92,12 +79,17 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
       return;
     }
 
+    if (!hasLocationOptions) {
+      alert("暂无可用货位，请先维护仓库货位基础数据");
+      return;
+    }
+
     const entries = details
       .map(detail => ({
         detail,
         quantity: storageQuantities[detail.id] || 0,
         locationValue: locationSelections[detail.id] || "",
-        batchNo: batchNumbers[detail.id] || ""
+        batchNo: batchNumbers[detail.id]?.trim() || ""
       }))
       .filter(item => item.quantity > 0);
 
@@ -107,83 +99,35 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
     }
 
     for (const entry of entries) {
-      const remaining = entry.detail.quantity - getStoredQuantity(entry.detail);
-      if (entry.quantity > remaining) {
-        alert(`${entry.detail.drug_name} 的本次入库数量不能大于剩余数量`);
+      const remainingQuantity = Math.max(entry.detail.quantity - getStoredQuantity(entry.detail), 0);
+      if (entry.quantity > remainingQuantity) {
+        alert(`${entry.detail.drug_name} 的本次入库数量不能超过剩余可入数量`);
         return;
       }
 
       if (!entry.locationValue) {
-        alert(`请选择 ${entry.detail.drug_name} 的入库货位`);
+        alert(`请选择 ${entry.detail.drug_name} 的货位`);
         return;
       }
     }
 
     setSubmitting(true);
     try {
-      const inventories = await getInventoryRecords();
-      const inventoryMap = new Map(
-        inventories.map(item => [
-          `${item.warehouse_code}|${item.location_code}|${item.drugApprovalNo}|${item.batch_no || ""}`,
-          item
-        ])
-      );
-
-      for (const entry of entries) {
-        const [warehouse_code, location_code] = entry.locationValue.split("|");
-        const expiry_date = addMonths(entry.detail.production_date, entry.detail.validity_months);
-
-        await createPurchaseStorage({
-          warehouse_code,
-          location_code,
-          orderNo: selectedOrder.order_no,
-          storage_date: storageDate,
-          manufacturerApprovalNo: selectedOrder.manufacturerApprovalNo,
-          drugApprovalNo: entry.detail.drugApprovalNo,
-          drug_name: entry.detail.drug_name,
-          production_date: entry.detail.production_date,
-          expiry_date,
-          quantity: entry.quantity,
-          purchaser: selectedOrder.purchaser,
-          inspector,
-          keeper,
-          batch_no: entry.batchNo
-        });
-
-        const inventoryKey = `${warehouse_code}|${location_code}|${entry.detail.drugApprovalNo}|${entry.batchNo || ""}`;
-        const matchedInventory = inventoryMap.get(inventoryKey);
-
-        if (matchedInventory) {
-          const updatedInventory = await updateInventory(matchedInventory.id, {
-            quantity: matchedInventory.quantity + entry.quantity
-          });
-          inventoryMap.set(inventoryKey, updatedInventory);
-        } else {
-          const createdInventory = await createInventory({
+      await submitPurchaseStorage({
+        orderNo: selectedOrder.order_no,
+        storage_date: storageDate,
+        inspector,
+        keeper,
+        entries: entries.map(entry => {
+          const [warehouse_code, location_code] = entry.locationValue.split("|");
+          return {
+            detailId: entry.detail.id,
             warehouse_code,
             location_code,
-            manufacturerApprovalNo: selectedOrder.manufacturerApprovalNo,
-            drugApprovalNo: entry.detail.drugApprovalNo,
-            drug_name: entry.detail.drug_name,
-            batch_no: entry.batchNo,
-            production_date: entry.detail.production_date,
-            expiry_date,
-            quantity: entry.quantity
-          });
-          inventoryMap.set(inventoryKey, createdInventory);
-        }
-      }
-
-      const allComplete = details.every(detail => {
-        const currentStored = getStoredQuantity(detail);
-        const newlyStored = entries
-          .filter(entry => entry.detail.id === detail.id)
-          .reduce((sum, entry) => sum + entry.quantity, 0);
-        return currentStored + newlyStored >= detail.quantity;
-      });
-
-      await updatePurchaseOrder(selectedOrder.order_no, {
-        status: allComplete ? "全部入库" : "部分入库"
+            quantity: entry.quantity,
+            batch_no: entry.batchNo || undefined
+          };
+        })
       });
 
       await revalidateCaches([CACHE_TAGS.purchaseOrders, CACHE_TAGS.purchaseStorages, CACHE_TAGS.inventories]);
@@ -206,10 +150,13 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
         <div className="space-y-1">
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">采购入库</h1>
           <p className="text-sm text-slate-500">根据采购订单录入实际入库信息</p>
+          {!hasLocationOptions ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">暂无可用货位，请先在基础数据中维护仓库货位</p>
+          ) : null}
         </div>
         <Button
           className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md hover:from-teal-600 hover:to-cyan-600"
-          disabled={submitting}
+          disabled={submitting || !hasLocationOptions}
           onClick={() => void handleSubmitStorage()}
         >
           {submitting ? "入库中..." : "确认入库"}
@@ -221,7 +168,7 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
           <div className="flex items-center gap-2">
             <span className="w-20 text-sm text-slate-600 dark:text-slate-400">采购单</span>
             <Select value={selectedOrderNo} onValueChange={setSelectedOrderNo}>
-              <SelectTrigger className="flex-1 h-8">
+              <SelectTrigger className="h-8 flex-1">
                 <SelectValue placeholder="选择采购单" />
               </SelectTrigger>
               <SelectContent>
@@ -269,6 +216,14 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
             {details.map(detail => {
               const storedQuantity = getStoredQuantity(detail);
               const remainingQuantity = Math.max(detail.quantity - storedQuantity, 0);
+              const locationHint =
+                remainingQuantity <= 0
+                  ? "该明细已全部入库"
+                  : hasLocationOptions
+                    ? ""
+                    : "暂无可用货位，请先维护仓库货位基础数据";
+              const locationPlaceholder =
+                remainingQuantity <= 0 ? "该明细已完成入库" : hasLocationOptions ? "选择货位" : "暂无可用货位";
 
               return (
                 <tr key={detail.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20">
@@ -284,6 +239,7 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
                     <Input
                       type="number"
                       className="h-8 w-20 text-center"
+                      disabled={remainingQuantity <= 0}
                       min={0}
                       max={remainingQuantity}
                       value={storageQuantities[detail.id] || ""}
@@ -296,28 +252,50 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
                       placeholder="0"
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <Select
-                      value={locationSelections[detail.id] || ""}
-                      onValueChange={value => setLocationSelections(prev => ({ ...prev, [detail.id]: value }))}
-                    >
-                      <SelectTrigger className="h-8 w-40">
-                        <SelectValue placeholder="选择货位" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {locationOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <td className="px-4 py-3 align-top">
+                    <div className="space-y-1 text-left">
+                      <Select
+                        value={locationSelections[detail.id] || ""}
+                        disabled={remainingQuantity <= 0 || !hasLocationOptions}
+                        onValueChange={value =>
+                          setLocationSelections(prev => ({
+                            ...prev,
+                            [detail.id]: value
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-40">
+                          <SelectValue placeholder={locationPlaceholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hasLocationOptions ? (
+                            locationOptions.map(option => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-1.5 text-sm text-slate-500">
+                              暂无可用货位，请先在基础数据中维护仓库货位
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {locationHint ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">{locationHint}</p>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Input
                       className="h-8 w-28 text-center"
                       value={batchNumbers[detail.id] || ""}
-                      onChange={event => setBatchNumbers(prev => ({ ...prev, [detail.id]: event.target.value }))}
+                      onChange={event =>
+                        setBatchNumbers(prev => ({
+                          ...prev,
+                          [detail.id]: event.target.value
+                        }))
+                      }
                       placeholder="例如 B2404001"
                     />
                   </td>
@@ -339,17 +317,17 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
         <div className="grid grid-cols-3 gap-4">
           <div className="flex items-center gap-2">
             <span className="w-20 text-sm text-slate-600 dark:text-slate-400">检验员</span>
-            <Input className="flex-1 h-8" value={inspector} onChange={e => setInspector(e.target.value)} />
+            <Input className="h-8 flex-1" value={inspector} onChange={e => setInspector(e.target.value)} />
           </div>
           <div className="flex items-center gap-2">
             <span className="w-20 text-sm text-slate-600 dark:text-slate-400">保管员</span>
-            <Input className="flex-1 h-8" value={keeper} onChange={e => setKeeper(e.target.value)} />
+            <Input className="h-8 flex-1" value={keeper} onChange={e => setKeeper(e.target.value)} />
           </div>
           <div className="flex items-center gap-2">
             <span className="w-20 text-sm text-slate-600 dark:text-slate-400">入库日期</span>
             <Input
               type="date"
-              className="flex-1 h-8"
+              className="h-8 flex-1"
               value={storageDate}
               onChange={e => setStorageDate(e.target.value)}
             />

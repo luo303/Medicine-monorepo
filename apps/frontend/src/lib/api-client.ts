@@ -346,6 +346,16 @@ export interface CreatePurchaseOrderParams {
   total_amount?: number;
   purchaser?: string;
   status?: string;
+  purchaseDetails?: CreatePurchaseOrderDetailParams[];
+}
+
+export interface CreatePurchaseOrderDetailParams {
+  drugApprovalNo: string;
+  drug_name: string;
+  production_date: string;
+  validity_months: number;
+  quantity: number;
+  unit_price: number;
 }
 
 export interface UpdatePurchaseOrderParams {
@@ -412,19 +422,18 @@ export async function getPurchaseDetailRecord(id: number): Promise<PurchaseDetai
 }
 
 export interface CreatePurchaseStorageParams {
-  warehouse_code: string;
-  location_code: string;
   orderNo: string;
   storage_date: string;
-  manufacturerApprovalNo: string;
-  drugApprovalNo: string;
-  drug_name: string;
-  production_date: string;
-  expiry_date: string;
-  quantity: number;
-  purchaser?: string;
   inspector?: string;
   keeper?: string;
+  entries: SubmitPurchaseStorageEntryParams[];
+}
+
+export interface SubmitPurchaseStorageEntryParams {
+  detailId: number;
+  warehouse_code: string;
+  location_code: string;
+  quantity: number;
   batch_no?: string;
 }
 
@@ -435,8 +444,8 @@ export interface UpdatePurchaseStorageParams {
 
 export type PurchaseStorage = PurchaseStorageEntity;
 
-export async function createPurchaseStorage(params: CreatePurchaseStorageParams): Promise<PurchaseStorage> {
-  return postApi<PurchaseStorage>("/purchase/storage", params);
+export async function submitPurchaseStorage(params: CreatePurchaseStorageParams): Promise<PurchaseStorage[]> {
+  return postApi<PurchaseStorage[]>("/purchase/storage", params);
 }
 
 export async function updatePurchaseStorage(id: number, params: UpdatePurchaseStorageParams): Promise<PurchaseStorage> {
@@ -463,6 +472,16 @@ export interface CreateSalesOrderParams {
   total_amount?: number;
   salesperson?: string;
   status?: string;
+  salesDetails?: CreateSalesOrderDetailParams[];
+}
+
+export interface CreateSalesOrderDetailParams {
+  manufacturerApprovalNo: string;
+  drugApprovalNo: string;
+  drug_name: string;
+  production_date: string;
+  quantity: number;
+  unit_price: number;
 }
 
 export interface UpdateSalesOrderParams {
@@ -529,19 +548,17 @@ export async function getSalesDetailRecord(id: number): Promise<SalesDetail> {
 }
 
 export interface CreateSalesOutboundParams {
-  warehouse_code: string;
-  location_code: string;
   orderNo: string;
   outbound_date: string;
-  institutionApprovalNo: string;
-  manufacturerApprovalNo?: string;
-  drugApprovalNo: string;
-  drug_name: string;
-  production_date: string;
-  quantity: number;
-  salesperson?: string;
   inspector?: string;
   keeper?: string;
+  entries: SubmitSalesOutboundEntryParams[];
+}
+
+export interface SubmitSalesOutboundEntryParams {
+  detailId: number;
+  inventoryId: number;
+  quantity: number;
 }
 
 export interface UpdateSalesOutboundParams {
@@ -550,8 +567,8 @@ export interface UpdateSalesOutboundParams {
 
 export type SalesOutbound = SalesOutboundRecord;
 
-export async function createSalesOutbound(params: CreateSalesOutboundParams): Promise<SalesOutbound> {
-  return postApi<SalesOutbound>("/sales/outbound", params);
+export async function submitSalesOutbound(params: CreateSalesOutboundParams): Promise<SalesOutbound[]> {
+  return postApi<SalesOutbound[]>("/sales/outbound", params);
 }
 
 export async function updateSalesOutbound(id: number, params: UpdateSalesOutboundParams): Promise<SalesOutbound> {

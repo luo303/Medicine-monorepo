@@ -1,12 +1,13 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Post,
   Put,
 } from '@nestjs/common';
+import { Public } from '@/custom/Public';
 import { SalesService } from './sales.service';
 import {
   CreateSalesOrderDto,
@@ -16,73 +17,63 @@ import {
   CreateSalesDetailDto,
   UpdateSalesDetailDto,
 } from './dto/sales-detail.dto';
-import {
-  CreateSalesOutboundDto,
-  UpdateSalesOutboundDto,
-} from './dto/sales-outbound.dto';
-import { Public } from '@/custom/Public';
+import { UpdateSalesOutboundDto } from './dto/sales-outbound.dto';
+import { SubmitSalesOutboundDto } from './dto/submit-sales-outbound.dto';
 
 @Controller('sales')
 export class SalesController {
   constructor(private readonly salesService: SalesService) {}
 
-  // 销售订单接口
   @Public()
   @Get('order')
   async findAllOrders() {
-    const orders = await this.salesService.findAllOrders();
     return {
-      data: orders,
+      data: await this.salesService.findAllOrders(),
       message: '获取销售订单列表成功',
     };
   }
 
   @Public()
   @Get('order/:order_no')
-  async findOneOrder(@Param('order_no') order_no: string) {
-    const order = await this.salesService.findOneOrder(order_no);
+  async findOneOrder(@Param('order_no') orderNo: string) {
     return {
-      data: order,
-      message: order ? '获取销售订单详情成功' : '未找到该订单',
+      data: await this.salesService.findOneOrder(orderNo),
+      message: '获取销售订单详情成功',
     };
   }
 
   @Post('order')
   async createOrder(@Body() createDto: CreateSalesOrderDto) {
-    const order = await this.salesService.createOrder(createDto);
     return {
-      data: order,
+      data: await this.salesService.createOrder(createDto),
       message: '创建销售订单成功',
     };
   }
 
   @Put('order/:order_no')
   async updateOrder(
-    @Param('order_no') order_no: string,
+    @Param('order_no') orderNo: string,
     @Body() updateDto: UpdateSalesOrderDto,
   ) {
-    const order = await this.salesService.updateOrder(order_no, updateDto);
     return {
-      data: order,
-      message: '修改销售订单成功',
+      data: await this.salesService.updateOrder(orderNo, updateDto),
+      message: '更新销售订单成功',
     };
   }
 
   @Delete('order/:order_no')
-  async removeOrder(@Param('order_no') order_no: string) {
-    const result = await this.salesService.removeOrder(order_no);
+  async removeOrder(@Param('order_no') orderNo: string) {
+    await this.salesService.removeOrder(orderNo);
     return {
-      message: result ? '删除销售订单成功' : '未找到该订单，删除失败',
+      message: '删除销售订单成功',
     };
   }
 
-  // 销售明细接口
   @Public()
   @Get('detail')
   async findAllDetails() {
-    const details = await this.salesService.findAllDetails();
     return {
-      data: details,
+      data: await this.salesService.findAllDetails(),
       message: '获取销售明细列表成功',
     };
   }
@@ -90,18 +81,16 @@ export class SalesController {
   @Public()
   @Get('detail/:id')
   async findOneDetail(@Param('id') id: string) {
-    const detail = await this.salesService.findOneDetail(+id);
     return {
-      data: detail,
-      message: detail ? '获取销售明细详情成功' : '未找到该明细',
+      data: await this.salesService.findOneDetail(+id),
+      message: '获取销售明细详情成功',
     };
   }
 
   @Post('detail')
   async createDetail(@Body() createDto: CreateSalesDetailDto) {
-    const detail = await this.salesService.createDetail(createDto);
     return {
-      data: detail,
+      data: await this.salesService.createDetail(createDto),
       message: '创建销售明细成功',
     };
   }
@@ -111,48 +100,43 @@ export class SalesController {
     @Param('id') id: string,
     @Body() updateDto: UpdateSalesDetailDto,
   ) {
-    const detail = await this.salesService.updateDetail(+id, updateDto);
     return {
-      data: detail,
-      message: '修改销售明细成功',
+      data: await this.salesService.updateDetail(+id, updateDto),
+      message: '更新销售明细成功',
     };
   }
 
   @Delete('detail/:id')
   async removeDetail(@Param('id') id: string) {
-    const result = await this.salesService.removeDetail(+id);
+    await this.salesService.removeDetail(+id);
     return {
-      message: result ? '删除销售明细成功' : '未找到该明细，删除失败',
+      message: '删除销售明细成功',
     };
   }
 
-  // 销售出库接口
   @Public()
   @Get('outbound')
   async findAllOutbounds() {
-    const outbounds = await this.salesService.findAllOutbounds();
     return {
-      data: outbounds,
-      message: '获取销售出库列表成功',
+      data: await this.salesService.findAllOutbounds(),
+      message: '获取销售出库记录列表成功',
     };
   }
 
   @Public()
   @Get('outbound/:id')
   async findOneOutbound(@Param('id') id: string) {
-    const outbound = await this.salesService.findOneOutbound(+id);
     return {
-      data: outbound,
-      message: outbound ? '获取销售出库详情成功' : '未找到该出库记录',
+      data: await this.salesService.findOneOutbound(+id),
+      message: '获取销售出库记录详情成功',
     };
   }
 
   @Post('outbound')
-  async createOutbound(@Body() createDto: CreateSalesOutboundDto) {
-    const outbound = await this.salesService.createOutbound(createDto);
+  async createOutbound(@Body() createDto: SubmitSalesOutboundDto) {
     return {
-      data: outbound,
-      message: '创建销售出库记录成功',
+      data: await this.salesService.createOutbound(createDto),
+      message: '提交销售出库成功',
     };
   }
 
@@ -161,18 +145,17 @@ export class SalesController {
     @Param('id') id: string,
     @Body() updateDto: UpdateSalesOutboundDto,
   ) {
-    const outbound = await this.salesService.updateOutbound(+id, updateDto);
     return {
-      data: outbound,
-      message: '修改销售出库记录成功',
+      data: await this.salesService.updateOutbound(+id, updateDto),
+      message: '更新销售出库记录成功',
     };
   }
 
   @Delete('outbound/:id')
   async removeOutbound(@Param('id') id: string) {
-    const result = await this.salesService.removeOutbound(+id);
+    await this.salesService.removeOutbound(+id);
     return {
-      message: result ? '删除销售出库记录成功' : '未找到该出库记录，删除失败',
+      message: '删除销售出库记录成功',
     };
   }
 }

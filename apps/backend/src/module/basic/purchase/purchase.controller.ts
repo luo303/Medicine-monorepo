@@ -1,12 +1,13 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Post,
   Put,
 } from '@nestjs/common';
+import { Public } from '@/custom/Public';
 import { PurchaseService } from './purchase.service';
 import {
   CreatePurchaseOrderDto,
@@ -16,92 +17,80 @@ import {
   CreatePurchaseDetailDto,
   UpdatePurchaseDetailDto,
 } from './dto/purchase-detail.dto';
-import {
-  CreatePurchaseStorageDto,
-  UpdatePurchaseStorageDto,
-} from './dto/purchase-storage.dto';
-import { Public } from '@/custom/Public';
+import { UpdatePurchaseStorageDto } from './dto/purchase-storage.dto';
+import { SubmitPurchaseStorageDto } from './dto/submit-purchase-storage.dto';
 
 @Controller('purchase')
 export class PurchaseController {
   constructor(private readonly purchaseService: PurchaseService) {}
 
-  // 采购订单接口
   @Public()
   @Get('order')
   async findAllOrders() {
-    const orders = await this.purchaseService.findAllOrders();
     return {
-      data: orders,
+      data: await this.purchaseService.findAllOrders(),
       message: '获取采购订单列表成功',
     };
   }
 
   @Public()
   @Get('order/:order_no')
-  async findOneOrder(@Param('order_no') order_no: string) {
-    const order = await this.purchaseService.findOneOrder(order_no);
+  async findOneOrder(@Param('order_no') orderNo: string) {
     return {
-      data: order,
-      message: order ? '获取采购订单详情成功' : '未找到该订单',
+      data: await this.purchaseService.findOneOrder(orderNo),
+      message: '获取采购订单详情成功',
     };
   }
 
   @Post('order')
   async createOrder(@Body() createDto: CreatePurchaseOrderDto) {
-    const order = await this.purchaseService.createOrder(createDto);
     return {
-      data: order,
-      message: '新增采购订单成功',
+      data: await this.purchaseService.createOrder(createDto),
+      message: '创建采购订单成功',
     };
   }
 
   @Put('order/:order_no')
   async updateOrder(
-    @Param('order_no') order_no: string,
+    @Param('order_no') orderNo: string,
     @Body() updateDto: UpdatePurchaseOrderDto,
   ) {
-    const order = await this.purchaseService.updateOrder(order_no, updateDto);
     return {
-      data: order,
-      message: '修改采购订单成功',
+      data: await this.purchaseService.updateOrder(orderNo, updateDto),
+      message: '更新采购订单成功',
     };
   }
 
   @Delete('order/:order_no')
-  async removeOrder(@Param('order_no') order_no: string) {
-    const result = await this.purchaseService.removeOrder(order_no);
+  async removeOrder(@Param('order_no') orderNo: string) {
+    await this.purchaseService.removeOrder(orderNo);
     return {
-      message: result ? '删除采购订单成功' : '未找到该订单，删除失败',
+      message: '删除采购订单成功',
     };
   }
 
-  // 采购明细接口
   @Public()
   @Get('detail')
   async findAllDetails() {
-    const details = await this.purchaseService.findAllDetails();
     return {
-      data: details,
-      message: '获取采购明细成功',
+      data: await this.purchaseService.findAllDetails(),
+      message: '获取采购明细列表成功',
     };
   }
 
   @Public()
   @Get('detail/:id')
   async findOneDetail(@Param('id') id: string) {
-    const detail = await this.purchaseService.findOneDetail(+id);
     return {
-      data: detail,
-      message: detail ? '获取采购明细详情成功' : '未找到该明细',
+      data: await this.purchaseService.findOneDetail(+id),
+      message: '获取采购明细详情成功',
     };
   }
 
   @Post('detail')
   async createDetail(@Body() createDto: CreatePurchaseDetailDto) {
-    const detail = await this.purchaseService.createDetail(createDto);
     return {
-      data: detail,
+      data: await this.purchaseService.createDetail(createDto),
       message: '创建采购明细成功',
     };
   }
@@ -111,48 +100,43 @@ export class PurchaseController {
     @Param('id') id: string,
     @Body() updateDto: UpdatePurchaseDetailDto,
   ) {
-    const detail = await this.purchaseService.updateDetail(+id, updateDto);
     return {
-      data: detail,
-      message: '修改采购明细成功',
+      data: await this.purchaseService.updateDetail(+id, updateDto),
+      message: '更新采购明细成功',
     };
   }
 
   @Delete('detail/:id')
   async removeDetail(@Param('id') id: string) {
-    const result = await this.purchaseService.removeDetail(+id);
+    await this.purchaseService.removeDetail(+id);
     return {
-      message: result ? '删除采购明细成功' : '未找到该明细，删除失败',
+      message: '删除采购明细成功',
     };
   }
 
-  // 采购入库接口
   @Public()
   @Get('storage')
   async findAllStorages() {
-    const storages = await this.purchaseService.findAllStorages();
     return {
-      data: storages,
-      message: '获取采购入库记录成功',
+      data: await this.purchaseService.findAllStorages(),
+      message: '获取采购入库记录列表成功',
     };
   }
 
   @Public()
   @Get('storage/:id')
   async findOneStorage(@Param('id') id: string) {
-    const storage = await this.purchaseService.findOneStorage(+id);
     return {
-      data: storage,
-      message: storage ? '获取采购入库详情成功' : '未找到该入库记录',
+      data: await this.purchaseService.findOneStorage(+id),
+      message: '获取采购入库记录详情成功',
     };
   }
 
   @Post('storage')
-  async createStorage(@Body() createDto: CreatePurchaseStorageDto) {
-    const storage = await this.purchaseService.createStorage(createDto);
+  async createStorage(@Body() createDto: SubmitPurchaseStorageDto) {
     return {
-      data: storage,
-      message: '创建采购入库记录成功',
+      data: await this.purchaseService.createStorage(createDto),
+      message: '提交采购入库成功',
     };
   }
 
@@ -161,18 +145,17 @@ export class PurchaseController {
     @Param('id') id: string,
     @Body() updateDto: UpdatePurchaseStorageDto,
   ) {
-    const storage = await this.purchaseService.updateStorage(+id, updateDto);
     return {
-      data: storage,
-      message: '修改采购入库记录成功',
+      data: await this.purchaseService.updateStorage(+id, updateDto),
+      message: '更新采购入库记录成功',
     };
   }
 
   @Delete('storage/:id')
   async removeStorage(@Param('id') id: string) {
-    const result = await this.purchaseService.removeStorage(+id);
+    await this.purchaseService.removeStorage(+id);
     return {
-      message: result ? '删除采购入库记录成功' : '未找到该入库记录，删除失败',
+      message: '删除采购入库记录成功',
     };
   }
 }

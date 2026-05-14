@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState } from "@/components/empty-state";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { revalidateCaches } from "@/lib/cache-client";
-import { createSalesOutbound, getInventoryRecords, updateInventory, updateSalesOrder } from "@/lib/api-client";
+import { submitSalesOutbound } from "@/lib/api-client";
 import type { Inventory } from "@/types/inventory";
 import type { SalesOrder, SalesOutboundRecord } from "@/types/sales";
 
@@ -29,21 +29,40 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
   const [outboundDate, setOutboundDate] = useState(new Date().toISOString().split("T")[0]);
   const [submitting, setSubmitting] = useState(false);
 
+  const pendingOrders = useMemo(() => {
+    return orders.filter(order =>
+      order.salesDetails.some(detail => {
+        const alreadyOutbound = outbounds
+          .filter(
+            outbound =>
+              outbound.orderNo === order.order_no &&
+              outbound.drugApprovalNo === detail.drugApprovalNo &&
+              outbound.production_date === detail.production_date &&
+              outbound.manufacturerApprovalNo === detail.manufacturerApprovalNo
+          )
+          .reduce((sum, outbound) => sum + outbound.quantity, 0);
+
+        return alreadyOutbound < detail.quantity;
+      })
+    );
+  }, [orders, outbounds]);
+
   useEffect(() => {
     const orderNo = searchParams.get("orderNo");
-    if (orderNo && orders.some(order => order.order_no === orderNo)) {
+    if (orderNo && pendingOrders.some(order => order.order_no === orderNo)) {
       setSelectedOrderNo(orderNo);
       return;
     }
 
-    if (!selectedOrderNo && orders[0]) {
-      setSelectedOrderNo(orders[0].order_no);
+    if (selectedOrderNo && !pendingOrders.some(order => order.order_no === selectedOrderNo)) {
+      setSelectedOrderNo(pendingOrders[0]?.order_no ?? "");
+      return;
     }
-  }, [orders, searchParams, selectedOrderNo]);
 
-  const pendingOrders = useMemo(() => {
-    return orders.filter(order => order.status === "已审核" || order.status === "部分出库");
-  }, [orders]);
+    if (!selectedOrderNo && pendingOrders[0]) {
+      setSelectedOrderNo(pendingOrders[0].order_no);
+    }
+  }, [pendingOrders, searchParams, selectedOrderNo]);
 
   const selectedOrder = useMemo(() => {
     return orders.find(order => order.order_no === selectedOrderNo) ?? null;
@@ -100,15 +119,14 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
       return;
     }
 
-    const currentInventories = await getInventoryRecords();
-    const inventoryMap = new Map(currentInventories.map(item => [String(item.id), item]));
+    const plannedOutboundByInventory = new Map<string, number>();
 
     for (const entry of entries) {
       const alreadyOutbound = getAlreadyOutbound(entry.detail.id);
       const remainingQuantity = Math.max(entry.detail.quantity - alreadyOutbound, 0);
 
       if (entry.quantity > remainingQuantity) {
-        alert(`${entry.detail.drug_name} 的本次出库数量不能大于剩余待出库数量`);
+        alert(`${entry.detail.drug_name} 的本次出库数量不能超过剩余待出库数量`);
         return;
       }
 
@@ -117,56 +135,33 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
         return;
       }
 
-      const matchedInventory = inventoryMap.get(entry.inventoryId);
+      const matchedInventory = inventories.find(item => String(item.id) === entry.inventoryId);
       if (!matchedInventory) {
         alert(`未找到 ${entry.detail.drug_name} 对应的库存记录`);
         return;
       }
 
-      if (entry.quantity > matchedInventory.quantity) {
-        alert(`${entry.detail.drug_name} 的出库数量不能大于当前库存`);
+      const plannedQuantity = (plannedOutboundByInventory.get(entry.inventoryId) ?? 0) + entry.quantity;
+      if (plannedQuantity > matchedInventory.quantity) {
+        alert(`${entry.detail.drug_name} 的累计出库数量不能超过当前库存`);
         return;
       }
+
+      plannedOutboundByInventory.set(entry.inventoryId, plannedQuantity);
     }
 
     setSubmitting(true);
     try {
-      for (const entry of entries) {
-        const matchedInventory = inventoryMap.get(entry.inventoryId)!;
-
-        await createSalesOutbound({
-          warehouse_code: matchedInventory.warehouse_code,
-          location_code: matchedInventory.location_code,
-          orderNo: selectedOrder.order_no,
-          outbound_date: outboundDate,
-          institutionApprovalNo: selectedOrder.institutionApprovalNo,
-          manufacturerApprovalNo: entry.detail.manufacturerApprovalNo,
-          drugApprovalNo: entry.detail.drugApprovalNo,
-          drug_name: entry.detail.drug_name,
-          production_date: entry.detail.production_date,
-          quantity: entry.quantity,
-          salesperson: selectedOrder.salesperson,
-          inspector,
-          keeper
-        });
-
-        const updatedInventory = await updateInventory(matchedInventory.id, {
-          quantity: Math.max(matchedInventory.quantity - entry.quantity, 0)
-        });
-
-        inventoryMap.set(entry.inventoryId, updatedInventory);
-      }
-
-      const allComplete = selectedOrder.salesDetails.every(detail => {
-        const currentOutbound = getAlreadyOutbound(detail.id);
-        const newOutbound = entries
-          .filter(entry => entry.detail.id === detail.id)
-          .reduce((sum, entry) => sum + entry.quantity, 0);
-        return currentOutbound + newOutbound >= detail.quantity;
-      });
-
-      await updateSalesOrder(selectedOrder.order_no, {
-        status: allComplete ? "全部出库" : "部分出库"
+      await submitSalesOutbound({
+        orderNo: selectedOrder.order_no,
+        outbound_date: outboundDate,
+        inspector,
+        keeper,
+        entries: entries.map(entry => ({
+          detailId: entry.detail.id,
+          inventoryId: Number(entry.inventoryId),
+          quantity: entry.quantity
+        }))
       });
 
       await revalidateCaches([CACHE_TAGS.salesOrders, CACHE_TAGS.salesOutbounds, CACHE_TAGS.inventories]);
@@ -202,16 +197,20 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-500 dark:text-slate-400">销售单</span>
-            <Select value={selectedOrderNo} onValueChange={setSelectedOrderNo}>
+            <Select value={selectedOrderNo} onValueChange={setSelectedOrderNo} disabled={pendingOrders.length === 0}>
               <SelectTrigger className="h-8 w-64">
-                <SelectValue placeholder="请选择销售单" />
+                <SelectValue placeholder={pendingOrders.length > 0 ? "请选择销售单" : "暂无待出库销售单"} />
               </SelectTrigger>
               <SelectContent>
-                {pendingOrders.map(order => (
-                  <SelectItem key={order.order_no} value={order.order_no}>
-                    {order.order_no} - {order.institution_name}
-                  </SelectItem>
-                ))}
+                {pendingOrders.length > 0 ? (
+                  pendingOrders.map(order => (
+                    <SelectItem key={order.order_no} value={order.order_no}>
+                      {order.order_no} - {order.institution_name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-1.5 text-sm text-slate-500">暂无待出库销售单</div>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -238,7 +237,14 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200/60 bg-white dark:border-slate-700/40 dark:bg-slate-800/60">
         {!selectedOrder ? (
-          <EmptyState title="请选择销售单" description="请先从上方选择需要出库的销售单" />
+          <EmptyState
+            title={pendingOrders.length === 0 ? "暂无待出库销售单" : "请选择销售单"}
+            description={
+              pendingOrders.length === 0
+                ? "当前没有需要出库的销售单，或相关明细已经全部出库"
+                : "请先从上方选择需要出库的销售单"
+            }
+          />
         ) : selectedOrder.salesDetails.length === 0 ? (
           <EmptyState title="暂无药品明细" description="该销售单没有可出库的药品明细" />
         ) : (
@@ -258,11 +264,20 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
               {selectedOrder.salesDetails.map(detail => {
                 const matchedInventories = getMatchingInventories(detail.id);
+                const hasMatchedInventories = matchedInventories.length > 0;
                 const selectedInventoryId = inventorySelections[detail.id] || "";
                 const selectedInventory =
                   matchedInventories.find(item => String(item.id) === selectedInventoryId) ?? null;
                 const alreadyOutbound = getAlreadyOutbound(detail.id);
                 const remainingQuantity = Math.max(detail.quantity - alreadyOutbound, 0);
+                const inventoryHint =
+                  remainingQuantity <= 0
+                    ? "该明细已全部出库"
+                    : hasMatchedInventories
+                      ? ""
+                      : "暂无匹配批次库存，请先完成对应批次入库";
+                const inventoryPlaceholder =
+                  remainingQuantity <= 0 ? "该明细已完成出库" : hasMatchedInventories ? "选择库存批次" : "暂无匹配库存";
 
                 return (
                   <tr key={detail.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20">
@@ -271,22 +286,42 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
                     <td className="px-4 py-3 text-right font-mono">{detail.quantity}</td>
                     <td className="px-4 py-3 text-right font-mono text-emerald-600">{alreadyOutbound}</td>
                     <td className="px-4 py-3 text-right font-mono text-amber-600">{remainingQuantity}</td>
-                    <td className="px-4 py-3 text-center">
-                      <Select
-                        value={selectedInventoryId}
-                        onValueChange={value => setInventorySelections(prev => ({ ...prev, [detail.id]: value }))}
-                      >
-                        <SelectTrigger className="h-8 w-72">
-                          <SelectValue placeholder="选择库存批次" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {matchedInventories.map(inventory => (
-                            <SelectItem key={inventory.id} value={String(inventory.id)}>
-                              {inventory.warehouse.name} / {inventory.location_code} / {inventory.batch_no || "无批号"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <td className="px-4 py-3 align-top">
+                      <div className="space-y-1 text-left">
+                        <Select
+                          value={selectedInventoryId}
+                          disabled={remainingQuantity <= 0 || !hasMatchedInventories}
+                          onValueChange={value =>
+                            setInventorySelections(prev => ({
+                              ...prev,
+                              [detail.id]: value
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-72">
+                            <SelectValue placeholder={inventoryPlaceholder} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {hasMatchedInventories ? (
+                              matchedInventories.map(inventory => (
+                                <SelectItem key={inventory.id} value={String(inventory.id)}>
+                                  {inventory.warehouse.name} / {inventory.location_code} /{" "}
+                                  {inventory.batch_no || "无批号"}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="px-2 py-1.5 text-sm text-slate-500">
+                                {remainingQuantity <= 0
+                                  ? "该明细已全部出库，无需再选择库存来源"
+                                  : "暂无匹配批次库存，请先完成对应批次入库"}
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {inventoryHint ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">{inventoryHint}</p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
                       {selectedInventory?.quantity.toLocaleString() || 0}
@@ -295,9 +330,11 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
                       <Input
                         type="number"
                         className="h-8 w-20 text-center"
+                        disabled={remainingQuantity <= 0 || !selectedInventory}
                         value={outboundQuantities[detail.id] || ""}
                         min={0}
-                        max={Math.min(remainingQuantity, selectedInventory?.quantity || remainingQuantity)}
+                        max={selectedInventory ? Math.min(remainingQuantity, selectedInventory.quantity) : 0}
+                        placeholder={remainingQuantity <= 0 ? "已完成" : selectedInventory ? "0" : "无库存"}
                         onChange={e =>
                           setOutboundQuantities(prev => ({
                             ...prev,

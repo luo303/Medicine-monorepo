@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { revalidateCaches } from "@/lib/cache-client";
-import { createPurchaseDetail, createPurchaseOrder } from "@/lib/api-client";
+import { createPurchaseOrder } from "@/lib/api-client";
 import type { Drug, Manufacturer } from "@/types/basic-data";
 import type { PurchaseOrder } from "@/types/purchase";
 
@@ -132,22 +132,16 @@ export default function NewPurchaseOrderClient({ manufacturers, drugs, orders }:
         manufacturerApprovalNo: selectedManufacturerRecord.approval_no,
         manufacturer_name: selectedManufacturerRecord.name,
         total_amount: totalAmount,
-        purchaser
+        purchaser,
+        purchaseDetails: orderItems.map(item => ({
+          drugApprovalNo: item.drugApprovalNo,
+          drug_name: item.drug_name,
+          production_date: item.production_date,
+          validity_months: item.validity_months,
+          quantity: item.quantity,
+          unit_price: item.unit_price
+        }))
       });
-
-      await Promise.all(
-        orderItems.map(item =>
-          createPurchaseDetail({
-            orderNo: nextOrderNo,
-            drugApprovalNo: item.drugApprovalNo,
-            drug_name: item.drug_name,
-            production_date: item.production_date,
-            validity_months: item.validity_months,
-            quantity: item.quantity,
-            unit_price: item.unit_price
-          })
-        )
-      );
 
       await revalidateCaches([CACHE_TAGS.purchaseOrders, CACHE_TAGS.purchaseDetails]);
       alert(mode === "save" ? "采购单已保存" : "采购单已创建");

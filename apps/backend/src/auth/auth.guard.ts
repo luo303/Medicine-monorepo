@@ -25,6 +25,7 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+    console.log('接口被调用');
     if (isPublic) {
       // 💡 See this condition
       return true;
