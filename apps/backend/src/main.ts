@@ -31,6 +31,7 @@ async function bootstrap() {
   // app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
+      stopAtFirstError: true,
       whitelist: true,
     }),
   );

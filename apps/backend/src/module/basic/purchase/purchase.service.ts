@@ -60,20 +60,26 @@ export class PurchaseService {
 
   async createOrder(createDto: CreatePurchaseOrderDto) {
     return this.dataSource.transaction(async (manager) => {
-      const { purchaseDetails = [], ...orderPayload } = createDto;
+      const { purchaseDetails, ...orderPayload } = createDto;
+      const totalAmount = purchaseDetails.reduce(
+        (sum, detail) => sum + detail.quantity * detail.unit_price,
+        0,
+      );
 
-      const order = manager.create(PurchaseOrder, orderPayload);
+      const order = manager.create(PurchaseOrder, {
+        ...orderPayload,
+        total_amount: totalAmount,
+        status: PurchaseOrderStatus.PENDING,
+      });
       await manager.save(PurchaseOrder, order);
 
-      if (purchaseDetails.length) {
-        const details = purchaseDetails.map((detail) =>
-          manager.create(PurchaseDetail, {
-            ...detail,
-            orderNo: order.order_no,
-          }),
-        );
-        await manager.save(PurchaseDetail, details);
-      }
+      const details = purchaseDetails.map((detail) =>
+        manager.create(PurchaseDetail, {
+          ...detail,
+          orderNo: order.order_no,
+        }),
+      );
+      await manager.save(PurchaseDetail, details);
 
       return this.findOrderInManager(manager, order.order_no);
     });

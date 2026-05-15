@@ -84,6 +84,18 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
       return;
     }
 
+    const normalizedInspector = inspector.trim();
+    if (!normalizedInspector) {
+      alert("请输入检验员");
+      return;
+    }
+
+    const normalizedKeeper = keeper.trim();
+    if (!normalizedKeeper) {
+      alert("请输入保管员");
+      return;
+    }
+
     const entries = details
       .map(detail => ({
         detail,
@@ -116,8 +128,8 @@ export default function PurchaseStorageClient({ orders, warehouses, storageLocat
       await submitPurchaseStorage({
         orderNo: selectedOrder.order_no,
         storage_date: storageDate,
-        inspector,
-        keeper,
+        inspector: normalizedInspector,
+        keeper: normalizedKeeper,
         entries: entries.map(entry => {
           const [warehouse_code, location_code] = entry.locationValue.split("|");
           return {

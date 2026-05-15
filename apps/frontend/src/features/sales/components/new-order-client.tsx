@@ -130,6 +130,12 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
       return;
     }
 
+    const normalizedSalesperson = salesperson.trim();
+    if (!normalizedSalesperson) {
+      alert("请输入销售员");
+      return;
+    }
+
     if (!salesItems.length) {
       alert("请至少添加一条销售明细");
       return;
@@ -154,8 +160,7 @@ export function NewOrderClient({ orders, institutions, inventories }: NewOrderCl
         sales_date: salesDate,
         institutionApprovalNo: institution.approval_no,
         institution_name: institution.name,
-        total_amount: totalAmount,
-        salesperson,
+        salesperson: normalizedSalesperson,
         salesDetails: salesItems.map(item => ({
           manufacturerApprovalNo: item.manufacturerApprovalNo,
           drugApprovalNo: item.drugApprovalNo,

@@ -343,10 +343,8 @@ export interface CreatePurchaseOrderParams {
   order_date: string;
   manufacturerApprovalNo: string;
   manufacturer_name: string;
-  total_amount?: number;
-  purchaser?: string;
-  status?: string;
-  purchaseDetails?: CreatePurchaseOrderDetailParams[];
+  purchaser: string;
+  purchaseDetails: CreatePurchaseOrderDetailParams[];
 }
 
 export interface CreatePurchaseOrderDetailParams {
@@ -424,8 +422,8 @@ export async function getPurchaseDetailRecord(id: number): Promise<PurchaseDetai
 export interface CreatePurchaseStorageParams {
   orderNo: string;
   storage_date: string;
-  inspector?: string;
-  keeper?: string;
+  inspector: string;
+  keeper: string;
   entries: SubmitPurchaseStorageEntryParams[];
 }
 
@@ -469,10 +467,8 @@ export interface CreateSalesOrderParams {
   sales_date: string;
   institutionApprovalNo: string;
   institution_name: string;
-  total_amount?: number;
-  salesperson?: string;
-  status?: string;
-  salesDetails?: CreateSalesOrderDetailParams[];
+  salesperson: string;
+  salesDetails: CreateSalesOrderDetailParams[];
 }
 
 export interface CreateSalesOrderDetailParams {
@@ -550,8 +546,8 @@ export async function getSalesDetailRecord(id: number): Promise<SalesDetail> {
 export interface CreateSalesOutboundParams {
   orderNo: string;
   outbound_date: string;
-  inspector?: string;
-  keeper?: string;
+  inspector: string;
+  keeper: string;
   entries: SubmitSalesOutboundEntryParams[];
 }
 

@@ -651,9 +651,17 @@
   "order_date": "2024-04-06",
   "manufacturerApprovalNo": "MAN001",
   "manufacturer_name": "华北制药集团有限责任公司",
-  "total_amount": 125000.0,
   "purchaser": "采购员A",
-  "status": "待审核"
+  "purchaseDetails": [
+    {
+      "drugApprovalNo": "DRG001",
+      "drug_name": "阿莫西林胶囊",
+      "production_date": "2024-04-06",
+      "validity_months": 24,
+      "quantity": 5000,
+      "unit_price": 15.0
+    }
+  ]
 }
 ```
 
@@ -664,9 +672,8 @@
 | order_date | string | 是 | 采购日期，格式：YYYY-MM-DD |
 | manufacturerApprovalNo | string | 是 | 生产企业批准号，最大50字符 |
 | manufacturer_name | string | 是 | 企业名称，最大100字符 |
-| total_amount | number | 否 | 总金额 |
-| purchaser | string | 否 | 采购员，最大50字符 |
-| status | string | 否 | 状态，可选值：待审核、已审核、部分入库、全部入库、已完成 |
+| purchaser | string | 是 | 采购员，1 到 50 字符 |
+| purchaseDetails | array | 是 | 采购明细，至少 1 条，后端会基于明细自动计算总金额并设置初始状态 |
 
 **响应示例**：
 
@@ -851,40 +858,30 @@
 
 ```json
 {
-  "warehouse_code": "WH001",
-  "location_code": "A-01-01",
   "orderNo": "PO20240406001",
   "storage_date": "2024-04-06",
-  "manufacturerApprovalNo": "MAN001",
-  "drugApprovalNo": "DRG001",
-  "drug_name": "阿莫西林胶囊",
-  "production_date": "2024-04-06",
-  "expiry_date": "2026-04-06",
-  "quantity": 5000,
-  "purchaser": "采购员A",
   "inspector": "检验员甲",
   "keeper": "保管员甲",
-  "batch_no": "B20240406"
+  "entries": [
+    {
+      "detailId": 1,
+      "warehouse_code": "WH001",
+      "location_code": "A-01-01",
+      "quantity": 5000,
+      "batch_no": "B20240406"
+    }
+  ]
 }
 ```
 
 **参数说明**：
 | 参数名 | 类型 | 必填 | 说明 |
 |--------|------|------|------|
-| warehouse_code | string | 是 | 仓号，最大20字符 |
-| location_code | string | 是 | 货位号，最大20字符 |
 | orderNo | string | 是 | 采购单号，最大50字符 |
 | storage_date | string | 是 | 入库日期，格式：YYYY-MM-DD |
-| manufacturerApprovalNo | string | 是 | 生产企业批准号，最大50字符 |
-| drugApprovalNo | string | 是 | 药品批准号，最大50字符 |
-| drug_name | string | 是 | 药品名称，最大100字符 |
-| production_date | string | 是 | 生产日期，格式：YYYY-MM-DD |
-| expiry_date | string | 是 | 有效截止日期，格式：YYYY-MM-DD |
-| quantity | number | 是 | 入库数量，不能小于1 |
-| purchaser | string | 否 | 采购员，最大50字符 |
-| inspector | string | 否 | 检验员，最大50字符 |
-| keeper | string | 否 | 保管员，最大50字符 |
-| batch_no | string | 否 | 批号，最大50字符 |
+| inspector | string | 是 | 检验员，1 到 50 字符 |
+| keeper | string | 是 | 保管员，1 到 50 字符 |
+| entries | array | 是 | 入库明细，至少 1 条 |
 
 **响应示例**：
 
@@ -969,9 +966,17 @@
   "sales_date": "2024-04-06",
   "institutionApprovalNo": "HOS001",
   "institution_name": "北京协和医院",
-  "total_amount": 85000.0,
   "salesperson": "销售员甲",
-  "status": "待审核"
+  "salesDetails": [
+    {
+      "manufacturerApprovalNo": "MAN001",
+      "drugApprovalNo": "DRG001",
+      "drug_name": "阿莫西林胶囊",
+      "production_date": "2024-04-06",
+      "quantity": 3000,
+      "unit_price": 18.0
+    }
+  ]
 }
 ```
 
@@ -982,9 +987,8 @@
 | sales_date | string | 是 | 销售日期，格式：YYYY-MM-DD |
 | institutionApprovalNo | string | 是 | 机构批准号，最大50字符 |
 | institution_name | string | 是 | 机构名称，最大100字符 |
-| total_amount | number | 否 | 总金额 |
-| salesperson | string | 否 | 销售员，最大50字符 |
-| status | string | 否 | 状态，可选值：待审核、已审核、部分出库、全部出库、已完成 |
+| salesperson | string | 是 | 销售员，1 到 50 字符 |
+| salesDetails | array | 是 | 销售明细，至少 1 条，后端会基于明细自动计算总金额并设置初始状态 |
 
 **响应示例**：
 
@@ -1169,38 +1173,28 @@
 
 ```json
 {
-  "warehouse_code": "WH001",
-  "location_code": "A-01-01",
   "orderNo": "SO20240406001",
   "outbound_date": "2024-04-06",
-  "institutionApprovalNo": "HOS001",
-  "manufacturerApprovalNo": "MAN001",
-  "drugApprovalNo": "DRG001",
-  "drug_name": "阿莫西林胶囊",
-  "production_date": "2024-04-06",
-  "quantity": 3000,
-  "salesperson": "销售员甲",
   "inspector": "检验员甲",
-  "keeper": "保管员甲"
+  "keeper": "保管员甲",
+  "entries": [
+    {
+      "detailId": 1,
+      "inventoryId": 12,
+      "quantity": 3000
+    }
+  ]
 }
 ```
 
 **参数说明**：
 | 参数名 | 类型 | 必填 | 说明 |
 |--------|------|------|------|
-| warehouse_code | string | 是 | 仓号，最大20字符 |
-| location_code | string | 是 | 货位号，最大20字符 |
 | orderNo | string | 是 | 销售单号，最大50字符 |
 | outbound_date | string | 是 | 出库日期，格式：YYYY-MM-DD |
-| institutionApprovalNo | string | 是 | 机构批准号，最大50字符 |
-| manufacturerApprovalNo | string | 否 | 生产企业批准号，最大50字符 |
-| drugApprovalNo | string | 是 | 药品批准号，最大50字符 |
-| drug_name | string | 是 | 药品名称，最大100字符 |
-| production_date | string | 是 | 生产日期，格式：YYYY-MM-DD |
-| quantity | number | 是 | 出库数量，不能小于1 |
-| salesperson | string | 否 | 销售员，最大50字符 |
-| inspector | string | 否 | 检验员，最大50字符 |
-| keeper | string | 否 | 保管员，最大50字符 |
+| inspector | string | 是 | 检验员，1 到 50 字符 |
+| keeper | string | 是 | 保管员，1 到 50 字符 |
+| entries | array | 是 | 出库明细，至少 1 条 |
 
 **响应示例**：
 

@@ -119,6 +119,12 @@ export default function NewPurchaseOrderClient({ manufacturers, drugs, orders }:
       return;
     }
 
+    const normalizedPurchaser = purchaser.trim();
+    if (!normalizedPurchaser) {
+      alert("请输入采购员");
+      return;
+    }
+
     if (!orderItems.length) {
       alert("请至少添加一条采购明细");
       return;
@@ -131,8 +137,7 @@ export default function NewPurchaseOrderClient({ manufacturers, drugs, orders }:
         order_date: orderDate,
         manufacturerApprovalNo: selectedManufacturerRecord.approval_no,
         manufacturer_name: selectedManufacturerRecord.name,
-        total_amount: totalAmount,
-        purchaser,
+        purchaser: normalizedPurchaser,
         purchaseDetails: orderItems.map(item => ({
           drugApprovalNo: item.drugApprovalNo,
           drug_name: item.drug_name,

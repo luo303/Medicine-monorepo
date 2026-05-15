@@ -106,6 +106,18 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
       return;
     }
 
+    const normalizedInspector = inspector.trim();
+    if (!normalizedInspector) {
+      alert("请输入检验员");
+      return;
+    }
+
+    const normalizedKeeper = keeper.trim();
+    if (!normalizedKeeper) {
+      alert("请输入保管员");
+      return;
+    }
+
     const entries = selectedOrder.salesDetails
       .map(detail => ({
         detail,
@@ -155,8 +167,8 @@ export function StorageClient({ orders, inventories, outbounds }: StorageClientP
       await submitSalesOutbound({
         orderNo: selectedOrder.order_no,
         outbound_date: outboundDate,
-        inspector,
-        keeper,
+        inspector: normalizedInspector,
+        keeper: normalizedKeeper,
         entries: entries.map(entry => ({
           detailId: entry.detail.id,
           inventoryId: Number(entry.inventoryId),
