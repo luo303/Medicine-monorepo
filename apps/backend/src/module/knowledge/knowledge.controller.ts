@@ -1,22 +1,20 @@
 import {
   Controller,
-  Post,
   Get,
-  UseInterceptors,
+  Post,
   UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { normalizeUploadedFilename } from './knowledge-filename.util';
 import { KnowledgeService } from './knowledge.service';
 
 @Controller('knowledge')
 export class KnowledgeController {
   constructor(private readonly knowledgeService: KnowledgeService) {}
 
-  /**
-   * 上传文件到知识库
-   */
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -32,14 +30,16 @@ export class KnowledgeController {
       fileFilter: (req, file, callback) => {
         const allowedTypes = ['.txt', '.md', '.pdf', '.docx'];
         const ext = extname(file.originalname).toLowerCase();
+
         if (allowedTypes.includes(ext)) {
           callback(null, true);
-        } else {
-          callback(new Error(`不支持的文件类型：${ext}`), false);
+          return;
         }
+
+        callback(new Error(`不支持的文件类型：${ext}`), false);
       },
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB
+        fileSize: 10 * 1024 * 1024,
       },
     }),
   )
@@ -56,6 +56,7 @@ export class KnowledgeController {
       return { success: false, message: '未上传文件' };
     }
 
+    file.originalname = normalizeUploadedFilename(file.originalname);
     console.log(`📥 接收到文件：${file.originalname}`);
 
     const result = await this.knowledgeService.processFile(file);
@@ -67,9 +68,6 @@ export class KnowledgeController {
     };
   }
 
-  /**
-   * 获取文件列表
-   */
   @Get('files')
   getFileList(): {
     success: boolean;
@@ -84,6 +82,7 @@ export class KnowledgeController {
     message: string;
   } {
     const files = this.knowledgeService.getFileList();
+
     return {
       success: true,
       data: files,
@@ -91,9 +90,6 @@ export class KnowledgeController {
     };
   }
 
-  /**
-   * 清空知识库
-   */
   @Post('clear')
   clearKnowledgeBase(): {
     success: boolean;
@@ -101,6 +97,7 @@ export class KnowledgeController {
     data: null;
   } {
     this.knowledgeService.clearKnowledgeBase();
+
     return {
       success: true,
       message: '知识库已清空',
