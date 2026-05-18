@@ -1,15 +1,23 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import { extname } from 'path';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import { AuthUser } from '@/auth/auth.types';
 import { normalizeUploadedFilename } from './knowledge-filename.util';
 import { KnowledgeService } from './knowledge.service';
+import { KnowledgeUserContext, KnowledgeVisibility } from './knowledge.types';
 
 @Controller('knowledge')
 export class KnowledgeController {
@@ -18,16 +26,8 @@ export class KnowledgeController {
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/knowledge',
-        filename: (req, file, callback) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          callback(null, `${uniqueSuffix}${ext}`);
-        },
-      }),
-      fileFilter: (req, file, callback) => {
+      storage: memoryStorage(),
+      fileFilter: (_req, file, callback) => {
         const allowedTypes = ['.txt', '.md', '.pdf', '.docx'];
         const ext = extname(file.originalname).toLowerCase();
 
@@ -36,72 +36,115 @@ export class KnowledgeController {
           return;
         }
 
-        callback(new Error(`不支持的文件类型：${ext}`), false);
+        callback(new BadRequestException(`不支持的文件类型：${ext}`), false);
       },
       limits: {
         fileSize: 10 * 1024 * 1024,
       },
     }),
   )
-  async uploadFile(@UploadedFile() file: Express.Multer.File): Promise<{
-    success: boolean;
-    message: string;
-    data?: {
-      success: boolean;
-      chunks: number;
-      filename: string;
-    };
-  }> {
+  async uploadFile(
+    @CurrentUser() user: AuthUser | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('visibility') visibility: string | undefined,
+  ) {
+    if (!user) {
+      throw new BadRequestException('未识别到当前登录用户');
+    }
+
     if (!file) {
-      return { success: false, message: '未上传文件' };
+      throw new BadRequestException('未上传文件');
     }
 
     file.originalname = normalizeUploadedFilename(file.originalname);
-    console.log(`📥 接收到文件：${file.originalname}`);
 
-    const result = await this.knowledgeService.processFile(file);
+    const result = await this.knowledgeService.processFile(
+      file,
+      this.toKnowledgeUser(user),
+      this.parseVisibility(visibility),
+    );
 
     return {
-      success: true,
-      message: '文件处理成功',
       data: result,
+      message: '文件处理成功',
     };
   }
 
   @Get('files')
-  getFileList(): {
-    success: boolean;
-    data: Array<{
-      id: string;
-      filename: string;
-      originalName: string;
-      size: number;
-      chunks: number;
-      uploadTime: Date;
-    }>;
-    message: string;
-  } {
-    const files = this.knowledgeService.getFileList();
+  async getFileList(@CurrentUser() user: AuthUser | undefined) {
+    if (!user) {
+      throw new BadRequestException('未识别到当前登录用户');
+    }
+
+    const files = await this.knowledgeService.listFiles(
+      this.toKnowledgeUser(user),
+    );
 
     return {
-      success: true,
       data: files,
-      message: '获取文件列表成功',
+      message: '获取知识库文件列表成功',
     };
   }
 
-  @Post('clear')
-  clearKnowledgeBase(): {
-    success: boolean;
-    message: string;
-    data: null;
-  } {
-    this.knowledgeService.clearKnowledgeBase();
+  @Delete('files/:id')
+  async deleteFile(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param('id') id: string,
+  ) {
+    if (!user) {
+      throw new BadRequestException('未识别到当前登录用户');
+    }
+
+    await this.knowledgeService.removeFile(id, this.toKnowledgeUser(user));
 
     return {
-      success: true,
-      message: '知识库已清空',
       data: null,
+      message: '知识库文件删除成功',
+    };
+  }
+
+  @Delete('files')
+  async clearOwnFiles(
+    @CurrentUser() user: AuthUser | undefined,
+    @Query('visibility') visibility?: string,
+  ) {
+    if (!user) {
+      throw new BadRequestException('未识别到当前登录用户');
+    }
+
+    const deletedCount = await this.knowledgeService.removeOwnFiles(
+      this.toKnowledgeUser(user),
+      visibility ? this.parseVisibility(visibility) : undefined,
+    );
+
+    return {
+      data: {
+        deletedCount,
+      },
+      message: '已清空当前用户的知识库文件',
+    };
+  }
+
+  private parseVisibility(visibility: string | undefined): KnowledgeVisibility {
+    if (!visibility) {
+      return KnowledgeVisibility.PRIVATE;
+    }
+
+    if (visibility === KnowledgeVisibility.PRIVATE) {
+      return KnowledgeVisibility.PRIVATE;
+    }
+
+    if (visibility === KnowledgeVisibility.PUBLIC) {
+      return KnowledgeVisibility.PUBLIC;
+    }
+
+    throw new BadRequestException('visibility 只能是 private 或 public');
+  }
+
+  private toKnowledgeUser(user: AuthUser): KnowledgeUserContext {
+    return {
+      userId: Number(user.sub),
+      username: user.username,
     };
   }
 }

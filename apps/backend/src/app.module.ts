@@ -15,6 +15,7 @@ import { AiModule } from './module/ai/ai.module';
 import { KnowledgeModule } from './module/knowledge/knowledge.module';
 
 import { basic } from '../ormconfig';
+import { knowledge } from '../knowledge-ormconfig';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -23,6 +24,7 @@ import { basic } from '../ormconfig';
       load: [configload],
     }),
     TypeOrmModule.forRoot(basic),
+    TypeOrmModule.forRoot(knowledge),
     BasicModule,
     UserModule,
     AuthModule,

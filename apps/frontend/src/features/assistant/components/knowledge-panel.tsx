@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearKnowledgeFiles,
+  deleteKnowledgeFile,
   getKnowledgeFiles,
   uploadKnowledgeFile,
   type KnowledgeFile,
+  type KnowledgeVisibility,
   type UploadProgress
 } from "@/features/assistant/lib/knowledge";
 
@@ -24,6 +26,33 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getErrorMessage(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
+  ) {
+    return (error as { response: { data: { message: string } } }).response.data.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "请求失败";
+}
+
+function VisibilityPill({ visibility }: { visibility: KnowledgeVisibility }) {
+  const label = visibility === "public" ? "公开" : "私人";
+  const className =
+    visibility === "public"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-slate-200 bg-slate-100 text-slate-700";
+
+  return <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${className}`}>{label}</span>;
+}
+
 export default function KnowledgePanel() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -32,7 +61,11 @@ export default function KnowledgePanel() {
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [clearingFiles, setClearingFiles] = useState(false);
+  const [selectedVisibility, setSelectedVisibility] = useState<KnowledgeVisibility>("private");
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ownedFileCount = knowledgeFiles.filter(file => file.isOwner).length;
 
   const validateFile = (file: File): string | null => {
     const fileExt = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
@@ -95,18 +128,18 @@ export default function KnowledgePanel() {
     setUploadStatus("idle");
 
     try {
-      await uploadKnowledgeFile(file, (progress: UploadProgress) => {
+      await uploadKnowledgeFile(file, selectedVisibility, (progress: UploadProgress) => {
         setUploadProgress(progress.progress);
       });
 
       await loadKnowledgeFiles();
       setUploadStatus("success");
-      setUploadMessage("文件上传成功");
+      setUploadMessage(selectedVisibility === "public" ? "公开知识库文件上传成功" : "私人知识库文件上传成功");
       resetStatusLater();
-    } catch (uploadError) {
-      console.error("上传知识库文件失败:", uploadError);
+    } catch (error) {
+      console.error("上传知识库文件失败:", error);
       setUploadStatus("error");
-      setUploadMessage(`上传失败：${(uploadError as Error).message}`);
+      setUploadMessage(`上传失败：${getErrorMessage(error)}`);
       resetStatusLater();
     } finally {
       setUploading(false);
@@ -118,26 +151,54 @@ export default function KnowledgePanel() {
     }
   };
 
-  const handleClearKnowledge = async () => {
-    if (!knowledgeFiles.length) {
+  const handleDeleteFile = async (file: KnowledgeFile) => {
+    if (!file.isOwner || deletingFileId) {
       return;
     }
 
-    if (!confirm("确定要清空全部知识库文件吗？该操作无法撤销。")) {
+    const confirmed = window.confirm(`确定删除知识库文件“${file.name}”吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingFileId(file.id);
+    try {
+      await deleteKnowledgeFile(file.id);
+      await loadKnowledgeFiles();
+      setUploadStatus("success");
+      setUploadMessage("知识库文件删除成功");
+      resetStatusLater();
+    } catch (error) {
+      console.error("删除知识库文件失败:", error);
+      setUploadStatus("error");
+      setUploadMessage(`删除失败：${getErrorMessage(error)}`);
+      resetStatusLater();
+    } finally {
+      setDeletingFileId(null);
+    }
+  };
+
+  const handleClearKnowledge = async () => {
+    if (!ownedFileCount) {
+      return;
+    }
+
+    const confirmed = window.confirm("确定清空你上传的全部知识库文件吗？这不会影响其他用户的文件。");
+    if (!confirmed) {
       return;
     }
 
     setClearingFiles(true);
     try {
-      await clearKnowledgeFiles();
-      setKnowledgeFiles([]);
+      const deletedCount = await clearKnowledgeFiles();
+      await loadKnowledgeFiles();
       setUploadStatus("success");
-      setUploadMessage("知识库已清空");
+      setUploadMessage(`已清空 ${deletedCount} 个知识库文件`);
       resetStatusLater();
-    } catch (clearError) {
-      console.error("清空知识库失败:", clearError);
+    } catch (error) {
+      console.error("清空知识库失败:", error);
       setUploadStatus("error");
-      setUploadMessage(`清空失败：${(clearError as Error).message}`);
+      setUploadMessage(`清空失败：${getErrorMessage(error)}`);
       resetStatusLater();
     } finally {
       setClearingFiles(false);
@@ -145,7 +206,7 @@ export default function KnowledgePanel() {
   };
 
   return (
-    <div className="flex w-96 flex-col border-l border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-900">
       <div className="border-b border-gray-200 p-4 dark:border-gray-700">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -161,32 +222,57 @@ export default function KnowledgePanel() {
               知识库文件
             </h2>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              上传业务资料后，AI 问答会优先结合这些内容进行检索和回答。
+              上传后会写入 PostgreSQL，AI 检索时会自动合并你的私人知识库和全部公开知识库。
             </p>
           </div>
           <button
             type="button"
             onClick={handleClearKnowledge}
-            disabled={!knowledgeFiles.length || clearingFiles}
+            disabled={!ownedFileCount || clearingFiles}
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 transition hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
           >
-            {clearingFiles ? "清空中..." : "清空全部"}
+            {clearingFiles ? "清空中..." : "清空我的文件"}
           </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4">
-          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">上传文件</label>
+          <div className="mb-3 flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">上传文件</label>
+            <div className="flex rounded-full border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => setSelectedVisibility("private")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  selectedVisibility === "private"
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "text-gray-500 dark:text-gray-400"
+                }`}
+              >
+                私人
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedVisibility("public")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  selectedVisibility === "public" ? "bg-emerald-600 text-white" : "text-gray-500 dark:text-gray-400"
+                }`}
+              >
+                公开
+              </button>
+            </div>
+          </div>
+
           <div
-            className={`relative cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+            className={`relative rounded-xl border-2 border-dashed p-6 text-center transition-all ${
               uploading
                 ? "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20"
                 : uploadStatus === "success"
                   ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
                   : uploadStatus === "error"
                     ? "border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/20"
-                    : "border-gray-300 hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
+                    : "cursor-pointer border-gray-300 hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
             }`}
             onClick={() => {
               if (!uploading) {
@@ -251,17 +337,19 @@ export default function KnowledgePanel() {
             {uploading ? (
               <div>
                 <p className="mb-1 text-sm font-medium text-blue-600 dark:text-blue-400">上传中...</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">文件会自动切分并写入知识库。</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  文件会被切分并写入 PostgreSQL，当前模式：{selectedVisibility === "public" ? "公开" : "私人"}
+                </p>
               </div>
             ) : uploadStatus === "success" ? (
               <div>
                 <p className="mb-1 text-sm font-medium text-green-600 dark:text-green-400">{uploadMessage}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">现在可以在右侧对话中直接引用这些资料。</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">现在可以直接在右侧对话里引用这些资料。</p>
               </div>
             ) : uploadStatus === "error" ? (
               <div>
                 <p className="mb-1 text-sm font-medium text-red-600 dark:text-red-400">{uploadMessage}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">请检查文件格式或大小后重新上传。</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">请检查文件格式、大小或知识库服务配置后重试。</p>
               </div>
             ) : (
               <div>
@@ -293,8 +381,10 @@ export default function KnowledgePanel() {
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">已上传文件</label>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{knowledgeFiles.length} 个文件</span>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">可见文件</label>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              共 {knowledgeFiles.length} 个，其中你上传了 {ownedFileCount} 个
+            </span>
           </div>
 
           {loadingFiles ? (
@@ -316,41 +406,52 @@ export default function KnowledgePanel() {
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                 />
               </svg>
-              <p className="text-sm text-gray-500 dark:text-gray-400">还没有上传任何知识库文件</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">还没有可用的知识库文件</p>
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                上传文件后，这些资料会被用于智能检索和问答。
+                上传文件后，AI 会自动在你的私人库和公开库中联合检索。
               </p>
             </div>
           ) : (
-            <div className="max-h-96 space-y-2 overflow-y-auto">
+            <div className="space-y-2">
               {knowledgeFiles.map(file => (
                 <div
                   key={file.id}
-                  className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-600"
+                  className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-600"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-blue-500 to-blue-600">
-                    <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-blue-500 to-blue-600">
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                    </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{file.name}</p>
-                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {formatFileSize(file.size)} · {file.chunks} 个分片 ·{" "}
-                      {new Date(file.uploadedAt).toLocaleDateString("zh-CN")}
-                    </p>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{file.name}</p>
+                        <VisibilityPill visibility={file.visibility} />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {formatFileSize(file.size)} · {file.chunks} 个分片 ·{" "}
+                        {new Date(file.uploadedAt).toLocaleDateString("zh-CN")} ·{" "}
+                        {file.isOwner ? "我上传的" : `来自 ${file.ownerUsername}`}
+                      </p>
+                    </div>
 
-                  <div className="shrink-0">
-                    <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    {file.isOwner ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteFile(file)}
+                        disabled={deletingFileId === file.id}
+                        className="shrink-0 rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-500 transition hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-400"
+                      >
+                        {deletingFileId === file.id ? "删除中..." : "删除"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}

@@ -92,6 +92,36 @@ const assertDatabaseConfig = (rawConfig: Record<string, unknown>) => {
   }
 };
 
+const assertKnowledgeDatabaseConfig = (rawConfig: Record<string, unknown>) => {
+  const dbConfig = rawConfig.KNOWLEDGE_DB;
+
+  if (!isRecord(dbConfig)) {
+    throw new Error(
+      `Knowledge database config is missing for NODE_ENV=${envName}.`,
+    );
+  }
+
+  const requiredKeys = [
+    'type',
+    'host',
+    'port',
+    'username',
+    'password',
+    'database',
+  ] as const;
+
+  const missingKeys = requiredKeys.filter((key) => {
+    const value = dbConfig[key];
+    return value === undefined || value === null || value === '';
+  });
+
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `Knowledge database config is incomplete for NODE_ENV=${envName}. Missing keys: ${missingKeys.join(', ')}`,
+    );
+  }
+};
+
 export const getEnvFilePaths = () => {
   return [
     path.join(backendRoot, `.env.${envName}`),
@@ -109,6 +139,7 @@ const config = (): AppConfig => {
   );
 
   assertDatabaseConfig(mergedConfig);
+  assertKnowledgeDatabaseConfig(mergedConfig);
 
   return mergedConfig as unknown as AppConfig;
 };

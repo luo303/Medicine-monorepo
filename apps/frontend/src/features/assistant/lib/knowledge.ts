@@ -1,11 +1,17 @@
 import apiClient from "./axios";
 
+export type KnowledgeVisibility = "private" | "public";
+
 export interface KnowledgeFile {
   id: string;
   name: string;
   size: number;
+  mimeType: string | null;
   uploadedAt: string;
   chunks: number;
+  visibility: KnowledgeVisibility;
+  ownerUsername: string;
+  isOwner: boolean;
 }
 
 export interface UploadProgress {
@@ -15,48 +21,46 @@ export interface UploadProgress {
 }
 
 export interface UploadResult {
-  success: boolean;
+  id: string;
   chunks: number;
   filename: string;
+  visibility: KnowledgeVisibility;
 }
 
-interface KnowledgeUploadResponse {
-  success: boolean;
+interface ApiResponse<T> {
+  code: number;
+  data: T;
   message: string;
-  data?: UploadResult;
 }
 
 interface KnowledgeFileResponse {
   id: string;
-  filename: string;
-  originalName: string;
+  name: string;
   size: number;
+  mimeType: string | null;
+  uploadedAt: string;
   chunks: number;
-  uploadTime: string;
+  visibility: KnowledgeVisibility;
+  ownerUsername: string;
+  isOwner: boolean;
 }
 
-interface KnowledgeFileListResponse {
-  success: boolean;
-  data: KnowledgeFileResponse[];
-  message: string;
-}
-
-interface KnowledgeClearResponse {
-  success: boolean;
-  message: string;
-  data: null;
+interface DeleteManyResponse {
+  deletedCount: number;
 }
 
 export function uploadKnowledgeFile(
   file: File,
+  visibility: KnowledgeVisibility,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("visibility", visibility);
 
     apiClient
-      .post<KnowledgeUploadResponse>("/knowledge/upload", formData, {
+      .post<ApiResponse<UploadResult>>("/knowledge/upload", formData, {
         headers: {
           "Content-Type": "multipart/form-data"
         },
@@ -71,7 +75,7 @@ export function uploadKnowledgeFile(
         }
       })
       .then(response => {
-        if (!response.data.data?.success || !response.data.data) {
+        if (!response.data.data) {
           reject(new Error(response.data.message || "Upload failed"));
           return;
         }
@@ -85,24 +89,29 @@ export function uploadKnowledgeFile(
 }
 
 export async function getKnowledgeFiles(): Promise<KnowledgeFile[]> {
-  const response = await apiClient.get<KnowledgeFileListResponse>("/knowledge/files");
+  const response = await apiClient.get<ApiResponse<KnowledgeFileResponse[]>>("/knowledge/files");
+
   return (response.data.data || []).map(file => ({
     id: file.id,
-    name: file.originalName || file.filename,
-    size: file.size,
-    uploadedAt: file.uploadTime,
-    chunks: file.chunks
+    name: file.name,
+    size: Number(file.size),
+    mimeType: file.mimeType,
+    uploadedAt: file.uploadedAt,
+    chunks: file.chunks,
+    visibility: file.visibility,
+    ownerUsername: file.ownerUsername,
+    isOwner: file.isOwner
   }));
 }
 
-export async function deleteKnowledgeFile(): Promise<void> {
-  throw new Error("Delete knowledge file endpoint is not available");
+export async function deleteKnowledgeFile(id: string): Promise<void> {
+  await apiClient.delete<ApiResponse<null>>(`/knowledge/files/${id}`);
 }
 
-export async function clearKnowledgeFiles(): Promise<void> {
-  const response = await apiClient.post<KnowledgeClearResponse>("/knowledge/clear");
+export async function clearKnowledgeFiles(visibility?: KnowledgeVisibility): Promise<number> {
+  const response = await apiClient.delete<ApiResponse<DeleteManyResponse>>("/knowledge/files", {
+    params: visibility ? { visibility } : undefined
+  });
 
-  if (!response.data.success) {
-    throw new Error(response.data.message || "Failed to clear knowledge base");
-  }
+  return response.data.data?.deletedCount ?? 0;
 }

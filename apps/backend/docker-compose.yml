@@ -1,12 +1,45 @@
-# Use root/example as user/password credentials
-
 services:
-
-  db:
+  mysql:
     image: mysql:8.0
-    restart: always
+    container_name: medicine-mysql
+    restart: unless-stopped
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: example
-    # (this is just an example, not intended to be a production configuration)
+      MYSQL_DATABASE: medicine
+      TZ: Asia/Shanghai
     ports:
       - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -pexample --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  knowledge-postgres:
+    image: pgvector/pgvector:pg16-trixie
+    container_name: medicine-knowledge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: medicine_knowledge
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - knowledge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medicine_knowledge"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql-data:
+  knowledge-postgres-data:

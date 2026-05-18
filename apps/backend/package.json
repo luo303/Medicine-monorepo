@@ -28,7 +28,10 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "pnpm typeorm migration:generate -d ormconfig.ts",
     "migration:run": "pnpm typeorm migration:run -d ormconfig.ts",
-    "migration:revert": "pnpm typeorm migration:revert -d ormconfig.ts"
+    "migration:revert": "pnpm typeorm migration:revert -d ormconfig.ts",
+    "knowledge:migration:generate": "pnpm typeorm migration:generate -d knowledge-ormconfig.ts",
+    "knowledge:migration:run": "pnpm typeorm migration:run -d knowledge-ormconfig.ts",
+    "knowledge:migration:revert": "pnpm typeorm migration:revert -d knowledge-ormconfig.ts"
   },
   "dependencies": {
     "@medicine/shared": "workspace:*",
@@ -47,6 +50,7 @@
     "multer": "^2.1.1",
     "mysql2": "^3.18.2",
     "pdf-parse": "1.1.1",
+    "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.28"

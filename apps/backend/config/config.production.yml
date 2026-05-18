@@ -6,5 +6,16 @@ DB:
   username: 'root'
   password: 'example'
   database: 'medicine'
+KNOWLEDGE_DB:
+  name: 'postgres-knowledge-production'
+  type: 'postgres'
+  host: '127.0.0.1'
+  port: 5432
+  username: 'postgres'
+  password: 'example'
+  database: 'medicine_knowledge'
 AI:
   ZHIPU_API_KEY: 'b5b3c7533e49457985a2bcda0933af02.FgVs9NPWCfeJe07s'
+  OLLAMA_BASE_URL: 'http://127.0.0.1:11434'
+  EMBEDDING_MODEL: 'nomic-embed-text-v2-moe:latest'
+  CHAT_MODEL: 'gpt-oss:120b-cloud'

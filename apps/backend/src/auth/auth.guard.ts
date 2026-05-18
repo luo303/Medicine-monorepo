@@ -5,19 +5,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../custom/Public';
+import { AuthUser, AuthenticatedRequest } from './auth.types';
 
-type JwtPayload = Record<string, unknown>;
-interface AuthRequest extends Request {
-  user?: JwtPayload;
-}
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
-    private jwtService: JwtService,
-    private reflector: Reflector,
+    private readonly jwtService: JwtService,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -25,28 +21,29 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    console.log('接口被调用');
+
     if (isPublic) {
-      // 💡 See this condition
       return true;
     }
-    const request = context.switchToHttp().getRequest<AuthRequest>();
+
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const cookie = request.headers?.cookie || '';
     const token = cookie
       .split('; ')
       .find((row) => row.startsWith('token='))
       ?.split('=')[1];
+
     if (!token) {
-      console.log('token not found');
       throw new UnauthorizedException();
     }
+
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
+      const payload = await this.jwtService.verifyAsync<AuthUser>(token);
       request.user = payload;
     } catch {
-      console.log('token verify failed');
       throw new UnauthorizedException();
     }
+
     return true;
   }
 }

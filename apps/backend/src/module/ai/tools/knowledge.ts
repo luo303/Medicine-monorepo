@@ -1,14 +1,16 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { KnowledgeService } from '../../knowledge/knowledge.service';
+import { KnowledgeUserContext } from '../../knowledge/knowledge.types';
 
-export function createKnowledgeTool(knowledgeService: KnowledgeService) {
+export function createKnowledgeTool(
+  knowledgeService: KnowledgeService,
+  user: KnowledgeUserContext,
+) {
   return [
     tool(
       async ({ question }: { question: string }) => {
-        console.log(`\n🔧 [知识库工具] 查询："${question}"`);
-
-        const result = await knowledgeService.query(question, 3);
+        const result = await knowledgeService.query(question, user, 3);
 
         if (result.sources.length === 0) {
           return '知识库中没有相关信息';
@@ -19,7 +21,7 @@ export function createKnowledgeTool(knowledgeService: KnowledgeService) {
       {
         name: 'query_knowledge_base',
         description:
-          '从上传的知识库文档中检索信息来回答问题。适用于查询公司制度、流程、规范等文档内容',
+          '从知识库文档中检索信息来回答问题，会自动按当前登录用户过滤私人和公共文档。',
         schema: z.object({
           question: z.string().describe('要查询的问题'),
         }),
