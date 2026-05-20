@@ -1,11 +1,18 @@
 "use client";
-import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { API_BASE_URL } from "@/lib/api-config";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { useTheme } from "@/components/theme-provider";
+import { API_BASE_URL } from "@/lib/api-config";
+
+type UiMessage = {
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+};
 
 function handleUnauthorized(): void {
   if (typeof window !== "undefined") {
@@ -15,9 +22,9 @@ function handleUnauthorized(): void {
 
 export default function ChatPanel() {
   const [input, setInput] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messages, setMessages] = useState<{ role: string; content: string; reasoning?: string }[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const mounted = useSyncExternalStore(
     () => () => undefined,
     () => true,
@@ -25,41 +32,48 @@ export default function ChatPanel() {
   );
   const { theme, setTheme } = useTheme();
 
-  // 自动滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 更新 AI 消息内容的函数
   const updateAIMessageContent = useCallback((content: string, reasoning?: string) => {
     setMessages(prev => {
-      const newMessages = [...prev];
-      for (let i = newMessages.length - 1; i >= 0; i--) {
-        if (newMessages[i].role === "assistant") {
-          newMessages[i] = {
-            ...newMessages[i],
-            content: content,
-            ...(reasoning !== undefined && { reasoning: reasoning })
+      const next = [...prev];
+
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content,
+            ...(reasoning !== undefined ? { reasoning } : {})
           };
-          return newMessages;
+          break;
         }
       }
-      return newMessages;
+
+      return next;
     });
   }, []);
 
-  // 发送消息的函数
   const sendMessage = async (userInput: string) => {
     if (isLoading) return;
 
+    const trimmedInput = userInput.trim();
+    if (!trimmedInput) return;
+
     setIsLoading(true);
 
-    // 1. 先添加用户消息
-    setMessages(prev => [...prev, { role: "user", content: userInput }]);
+    const requestMessages = messages.map(({ role, content }) => ({
+      role,
+      content
+    }));
+    const nextMessages = [...requestMessages, { role: "user", content: trimmedInput }];
 
-    // 2. 立即添加一个空的 AI 消息（占位）
-    setMessages(prev => [...prev, { role: "assistant", content: "", reasoning: "" }]);
-
+    setMessages(prev => [
+      ...prev,
+      { role: "user", content: trimmedInput },
+      { role: "assistant", content: "", reasoning: "" }
+    ]);
     setInput("");
 
     try {
@@ -70,7 +84,7 @@ export default function ChatPanel() {
         },
         credentials: "include",
         body: JSON.stringify({
-          messages: [...messages, { role: "user", content: userInput }]
+          messages: nextMessages
         })
       });
 
@@ -80,105 +94,110 @@ export default function ChatPanel() {
       }
 
       if (!res.ok) {
-        throw new Error(`请求失败：${res.status}`);
+        throw new Error(`Request failed: ${res.status}`);
       }
 
       if (!res.body) {
-        throw new Error("无法获取响应流");
+        throw new Error("Empty response body");
       }
-      setIsLoading(false);
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let aiResponse = "";
       let aiReasoning = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        buffer = buffer.replace(/\r/g, "");
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter(line => line.trim() !== "");
+        let eventBoundary = buffer.indexOf("\n\n");
+        while (eventBoundary !== -1) {
+          const rawEvent = buffer.slice(0, eventBoundary);
+          buffer = buffer.slice(eventBoundary + 2);
 
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6);
+          const dataStr = rawEvent
+            .split("\n")
+            .filter(line => line.startsWith("data:"))
+            .map(line => line.slice(5).trimStart())
+            .join("\n");
 
-            if (dataStr === "[DONE]") {
-              setMessages(prev => {
-                const newMessages = [...prev];
-                console.log(newMessages);
-                return newMessages;
-              });
-              continue;
-            }
-
-            try {
-              const data = JSON.parse(dataStr);
-              switch (data.type) {
-                case "reasoning":
-                  const reasoning_content = data.reasoning || "";
-                  aiReasoning += reasoning_content;
-                  updateAIMessageContent(aiResponse, aiReasoning);
-                  break;
-                case "text":
-                  const text = data.text || "";
-                  aiResponse += text;
-                  updateAIMessageContent(aiResponse, aiReasoning);
-                  break;
-                case "tool":
-                  console.log(data.tool_calls);
-                  break;
-              }
-            } catch (e) {
-              console.warn("解析失败:", e, "原始数据:", dataStr);
-            }
+          if (!dataStr || dataStr === "[DONE]") {
+            eventBoundary = buffer.indexOf("\n\n");
+            continue;
           }
+
+          try {
+            const data = JSON.parse(dataStr);
+
+            switch (data.type) {
+              case "reasoning": {
+                const reasoningContent = data.reasoning || "";
+                aiReasoning += reasoningContent;
+                updateAIMessageContent(aiResponse, aiReasoning);
+                break;
+              }
+              case "text": {
+                const text = data.text || "";
+                aiResponse += text;
+                updateAIMessageContent(aiResponse, aiReasoning);
+                break;
+              }
+              case "tool":
+                console.log(data.tool_calls);
+                break;
+              default:
+                break;
+            }
+          } catch (error) {
+            console.warn("Failed to parse SSE payload:", error, dataStr);
+          }
+
+          eventBoundary = buffer.indexOf("\n\n");
+        }
+
+        if (done) {
+          break;
         }
       }
     } catch (error) {
-      console.error("API 调用错误:", error);
-      updateAIMessageContent("抱歉，请求失败：" + (error as Error).message);
+      console.error("AI request failed:", error);
+      updateAIMessageContent(`抱歉，请求失败：${(error as Error).message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 回车发送消息
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (input.trim()) {
-        await sendMessage(input.trim());
-      }
+      await sendMessage(input);
     }
   };
 
-  // 按钮发送消息
   const handleSend = () => {
-    if (input.trim()) {
-      sendMessage(input.trim());
-    }
+    void sendMessage(input);
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 头部标题 */}
-      <div className="bg-white dark:bg-gray-900 backdrop-blur-sm shadow-sm border-b border-gray-200 dark:border-gray-700">
-        <div className="px-6 py-4 flex items-center justify-between">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-gray-200 bg-white shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="flex items-center justify-between px-6 py-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">医疗系统 AI 智能助手</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">随时为您解答问题</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">医疗系统 AI 助手</h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">随时为您解答问题</p>
           </div>
           <Button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             variant="outline"
-            className="rounded-lg border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+            className="rounded-lg border-gray-300 transition-all hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800"
             suppressHydrationWarning
           >
             {mounted ? (
               theme === "dark" ? (
                 <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -186,11 +205,11 @@ export default function ChatPanel() {
                       d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
                     />
                   </svg>
-                  <span className="ml-2">暗色</span>
+                  <span className="ml-2">深色</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -198,7 +217,7 @@ export default function ChatPanel() {
                       d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
                     />
                   </svg>
-                  <span className="ml-2">亮色</span>
+                  <span className="ml-2">浅色</span>
                 </>
               )
             ) : null}
@@ -206,14 +225,13 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* 消息区域 */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="space-y-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-20">
-              <div className="bg-gray-100 dark:bg-gray-800 rounded-full p-6 mb-4">
+            <div className="flex h-full flex-col items-center justify-center py-20 text-center">
+              <div className="mb-4 rounded-full bg-gray-100 p-6 dark:bg-gray-800">
                 <svg
-                  className="w-12 h-12 text-blue-600 dark:text-blue-400"
+                  className="h-12 w-12 text-blue-600 dark:text-blue-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -226,42 +244,39 @@ export default function ChatPanel() {
                   />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">开始对话</h2>
+              <h2 className="mb-2 text-xl font-semibold text-gray-700 dark:text-gray-300">开始对话</h2>
               <p className="text-gray-500 dark:text-gray-400">输入您的问题，我会尽力帮助您</p>
             </div>
           ) : (
             messages.map((message, index) => (
               <div
-                key={`${index}-${message.role}-${message.content.substring(0, 10)}`}
+                key={`${index}-${message.role}-${message.content.slice(0, 10)}`}
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className={`flex gap-3 max-w-[80%] ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                  {/* 头像 */}
+                <div className={`flex max-w-[80%] gap-3 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                   <div
-                    className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold ${
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white font-semibold ${
                       message.role === "user" ? "bg-blue-500" : "bg-gray-600 dark:bg-gray-500"
                     }`}
                   >
                     {message.role === "user" ? "你" : "AI"}
                   </div>
 
-                  {/* 消息内容 */}
                   <div className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
-                    {/* 推理内容 */}
-                    {message.role === "assistant" && message.reasoning && message.reasoning.trim() && (
-                      <div className="rounded-2xl px-4 py-2 mb-2 shadow-sm text-sm bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    {message.role === "assistant" && message.reasoning && message.reasoning.trim() ? (
+                      <div className="mb-2 rounded-2xl bg-gray-200 px-4 py-2 text-sm text-gray-600 shadow-sm dark:bg-gray-700 dark:text-gray-300">
                         <div className="markdown">
                           <Markdown remarkPlugins={[remarkGfm]}>{message.reasoning}</Markdown>
                         </div>
                       </div>
-                    )}
-                    {/* 正式回复内容 */}
+                    ) : null}
+
                     {message.content || (isLoading && index === messages.length - 1) ? (
                       <div
                         className={`rounded-2xl px-4 py-3 shadow-sm ${
                           message.role === "user"
                             ? "bg-blue-500 text-white"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                            : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
                         }`}
                       >
                         <div className="flex gap-2">
@@ -270,27 +285,27 @@ export default function ChatPanel() {
                               <Markdown remarkPlugins={[remarkGfm]}>
                                 {message.content ||
                                   (message.role === "assistant" && isLoading && index === messages.length - 1
-                                    ? "思考中"
+                                    ? "思考中..."
                                     : "")}
                               </Markdown>
                             </div>
                           </div>
-                          {message.role === "assistant" && isLoading && index === messages.length - 1 && (
-                            <div className="flex space-x-1 items-center">
+                          {message.role === "assistant" && isLoading && index === messages.length - 1 ? (
+                            <div className="flex items-center space-x-1">
                               <div
-                                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                                className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                                 style={{ animationDelay: "0ms" }}
-                              ></div>
+                              />
                               <div
-                                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                                className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                                 style={{ animationDelay: "150ms" }}
-                              ></div>
+                              />
                               <div
-                                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                                className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                                 style={{ animationDelay: "300ms" }}
-                              ></div>
+                              />
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
@@ -304,59 +319,56 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* 输入区域 */}
-      <div className="bg-white dark:bg-gray-900 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 shadow-lg">
+      <div className="border-t border-gray-200 bg-white shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="px-4 py-4">
-          <div className="flex gap-3 items-end">
-            <div className="flex-1 relative">
+          <div className="flex items-end gap-3">
+            <div className="relative flex-1">
               <Textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="请输入你的问题... (按 Enter 发送，Shift + Enter 换行)"
-                className="min-h-[60px] max-h-[200px] resize-none rounded-xl border-gray-300 dark:border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 transition-all shadow-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                placeholder="请输入你的问题...（按 Enter 发送，Shift + Enter 换行）"
+                className="min-h-[60px] max-h-[200px] resize-none rounded-xl border-gray-300 bg-white text-gray-900 shadow-sm transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-blue-800"
                 disabled={isLoading}
               />
-              {isLoading && (
-                <div className="absolute right-3 bottom-3">
+              {isLoading ? (
+                <div className="absolute bottom-3 right-3">
                   <div className="flex space-x-1">
                     <div
-                      className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                      className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                       style={{ animationDelay: "0ms" }}
-                    ></div>
+                    />
                     <div
-                      className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                      className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                       style={{ animationDelay: "150ms" }}
-                    ></div>
+                    />
                     <div
-                      className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                      className="h-2 w-2 animate-bounce rounded-full bg-blue-500"
                       style={{ animationDelay: "300ms" }}
-                    ></div>
+                    />
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
             <Button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="h-[60px] px-6 rounded-xl bg-blue-500 hover:bg-blue-600 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-[60px] rounded-xl bg-blue-500 px-6 shadow-md transition-all hover:bg-blue-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoading ? (
                 <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                   <span>发送中...</span>
                 </div>
               ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                    />
-                  </svg>
-                </>
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                  />
+                </svg>
               )}
             </Button>
           </div>

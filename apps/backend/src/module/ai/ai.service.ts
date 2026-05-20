@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatOllama } from '@langchain/ollama';
-import { createAgent } from 'langchain';
+import { ChatOpenAI } from '@langchain/openai';
+import {
+  END,
+  MessagesAnnotation,
+  START,
+  StateGraph,
+} from '@langchain/langgraph';
+import { ToolNode } from '@langchain/langgraph/prebuilt';
+import { SystemMessage } from '@langchain/core/messages';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Inventory } from '@/entity/Inventory';
@@ -29,7 +36,7 @@ import { IAgent } from './tools/tool.types';
 
 @Injectable()
 export class AiService {
-  private readonly model: ChatOllama;
+  private readonly model: ChatOpenAI;
 
   constructor(
     private readonly drugService: DrugService,
@@ -47,10 +54,26 @@ export class AiService {
     private readonly storageLocationRepository: Repository<StorageLocation>,
     private readonly configService: ConfigService,
   ) {
-    this.model = new ChatOllama({
-      model:
-        this.configService.get<string>('AI.CHAT_MODEL') ?? 'gpt-oss:120b-cloud',
+    const apiKey = this.configService.get<string>('AI.ZHIPU_API_KEY')?.trim();
+
+    if (!apiKey) {
+      throw new Error(
+        'AI.ZHIPU_API_KEY is required for chat. Please fill it in the backend config.',
+      );
+    }
+
+    const baseURL =
+      this.configService.get<string>('AI.ZHIPU_BASE_URL')?.trim() ||
+      'https://open.bigmodel.cn/api/paas/v4/';
+
+    this.model = new ChatOpenAI({
+      model: this.configService.get<string>('AI.CHAT_MODEL') ?? 'glm-4.7-flash',
+      apiKey,
       temperature: 0,
+      streamUsage: false,
+      configuration: {
+        baseURL,
+      },
     });
   }
 
@@ -67,18 +90,50 @@ export class AiService {
       ...createKnowledgeTool(this.knowledgeService, user),
     ];
 
-    return createAgent({
-      model: this.model,
-      tools,
-      systemPrompt: `你是专业的医疗业务 AI 助手，回答必须基于工具返回的真实结果。
+    const llmWithTools = this.model.bindTools(tools);
+    const toolNode = new ToolNode(tools);
 
-重要规则：
-1. 当用户询问药品、仓库、库存、生产企业、医疗机构、采购订单、销售订单或货位相关问题时，必须调用对应工具获取数据。
-2. 当用户询问已上传文件中的内容时，必须优先调用 query_knowledge_base 工具。
-3. query_knowledge_base 已经自动按当前用户过滤私人和公共知识库，禁止跳过检索直接编造答案。
-4. 如果无法确定用户指的是哪条数据，可以先调用查询工具查看候选项。
-5. 回答要简洁、直接、可执行，不要杜撰没有检索到的信息。
-6. 使用 Markdown 时必须保证格式完整；返回多列数据时使用完整表格，返回单条明细时优先使用项目列表。`,
-    }) as unknown as IAgent;
+    const systemPrompt = [
+      'You are a medical business AI assistant.',
+      'Reply in the same language as the user unless they ask for another language.',
+      'For questions about drugs, warehouses, inventory, manufacturers, medical institutions, purchase orders, sales orders, storage locations, or uploaded knowledge files, always answer from tool results first.',
+      'If the user asks about uploaded document content, call query_knowledge_base first.',
+      'Do not invent facts that are not returned by tools.',
+      'If the target record is ambiguous, query candidate records first and then answer.',
+      'Keep answers concise, direct, and actionable.',
+    ].join('\n');
+
+    const llmCall = async (state: typeof MessagesAnnotation.State) => {
+      const result = await llmWithTools.invoke([
+        new SystemMessage(systemPrompt),
+        ...state.messages,
+      ]);
+
+      return {
+        messages: [result],
+      };
+    };
+
+    const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+      const lastMessage = state.messages.at(-1);
+      const toolCalls =
+        lastMessage && 'tool_calls' in lastMessage
+          ? lastMessage.tool_calls
+          : undefined;
+
+      if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+        return 'toolNode';
+      }
+
+      return END;
+    };
+
+    return new StateGraph(MessagesAnnotation)
+      .addNode('llmCall', llmCall)
+      .addNode('toolNode', toolNode)
+      .addEdge(START, 'llmCall')
+      .addConditionalEdges('llmCall', shouldContinue, ['toolNode', END])
+      .addEdge('toolNode', 'llmCall')
+      .compile() as unknown as IAgent;
   }
 }

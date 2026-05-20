@@ -3,11 +3,6 @@ import { z } from 'zod';
 import { StorageLocation } from '@/entity/StorageLocation';
 import { Repository } from 'typeorm';
 
-/**
- * 创建货位相关的 AI 工具
- * @param storageLocationRepository 货位仓库
- * @returns 货位相关的工具数组
- */
 export function createStorageLocationTools(
   storageLocationRepository: Repository<StorageLocation>,
 ) {
@@ -23,6 +18,7 @@ export function createStorageLocationTools(
             warehouse_id,
           });
         }
+
         if (code) {
           queryBuilder.andWhere('location.code LIKE :code', {
             code: `%${code}%`,
@@ -33,7 +29,7 @@ export function createStorageLocationTools(
         return JSON.stringify(
           locations.map((l) => ({
             id: l.id,
-            warehouse_name: l.warehouse?.name || '未知仓库',
+            warehouse_name: l.warehouse?.name || 'Unknown warehouse',
             code: l.code,
             capacity: l.capacity,
             description: l.description,
@@ -42,10 +38,17 @@ export function createStorageLocationTools(
       },
       {
         name: 'query_storage_locations',
-        description: '查询货位列表，可以按仓库 ID 或货位号筛选',
+        description:
+          'Query storage locations. Optionally filter by warehouse ID or location code.',
         schema: z.object({
-          warehouse_id: z.number().optional().describe('可选的仓库 ID'),
-          code: z.string().optional().describe('可选的货位号关键词'),
+          warehouse_id: z
+            .number()
+            .optional()
+            .describe('Optional warehouse ID.'),
+          code: z
+            .string()
+            .optional()
+            .describe('Optional storage location code keyword.'),
         }),
       },
     ),

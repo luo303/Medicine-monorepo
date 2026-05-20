@@ -3,11 +3,6 @@ import { z } from 'zod';
 import { SalesOrder } from '@/entity/SalesOrder';
 import { Repository } from 'typeorm';
 
-/**
- * 创建销售订单相关的 AI 工具
- * @param salesOrderRepository 销售订单仓库
- * @returns 销售订单相关的工具数组
- */
 export function createSalesOrderTools(
   salesOrderRepository: Repository<SalesOrder>,
 ) {
@@ -15,17 +10,20 @@ export function createSalesOrderTools(
     tool(
       async ({ order_no, institution_name, status }) => {
         const queryBuilder = salesOrderRepository.createQueryBuilder('order');
+
         if (order_no) {
           queryBuilder.andWhere('order.order_no LIKE :order_no', {
             order_no: `%${order_no}%`,
           });
         }
+
         if (institution_name) {
           queryBuilder.andWhere(
             'order.institution_name LIKE :institution_name',
             { institution_name: `%${institution_name}%` },
           );
         }
+
         if (status) {
           queryBuilder.andWhere('order.status = :status', { status });
         }
@@ -44,14 +42,18 @@ export function createSalesOrderTools(
       },
       {
         name: 'query_sales_orders',
-        description: '查询销售订单列表，可以按订单号、医疗机构名称或状态筛选',
+        description:
+          'Query sales orders. Optionally filter by order number, institution name, or status.',
         schema: z.object({
-          order_no: z.string().optional().describe('可选的销售单号关键词'),
+          order_no: z
+            .string()
+            .optional()
+            .describe('Optional sales order number keyword.'),
           institution_name: z
             .string()
             .optional()
-            .describe('可选的医疗机构名称关键词'),
-          status: z.string().optional().describe('可选的订单状态'),
+            .describe('Optional medical institution name keyword.'),
+          status: z.string().optional().describe('Optional order status.'),
         }),
       },
     ),
@@ -61,7 +63,11 @@ export function createSalesOrderTools(
           where: { order_no },
           relations: ['salesDetails', 'salesDetails.drug'],
         });
-        if (!order) return '未找到该订单';
+
+        if (!order) {
+          return 'Sales order not found.';
+        }
+
         return JSON.stringify(
           order.salesDetails.map((d) => ({
             drug_name: d.drug_name || d.drug?.name,
@@ -73,9 +79,10 @@ export function createSalesOrderTools(
       },
       {
         name: 'query_sales_order_details',
-        description: '查询销售订单详情，获取该订单下的所有药品明细',
+        description:
+          'Query sales order details and return all medicine line items under the order.',
         schema: z.object({
-          order_no: z.string().describe('销售单号'),
+          order_no: z.string().describe('Sales order number.'),
         }),
       },
     ),

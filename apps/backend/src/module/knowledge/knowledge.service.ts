@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Document } from '@langchain/core/documents';
-import { OllamaEmbeddings } from '@langchain/ollama';
+import { ZhipuAIEmbeddings } from '@langchain/community/embeddings/zhipuai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -46,7 +46,7 @@ export interface KnowledgeUploadResult {
 
 @Injectable()
 export class KnowledgeService {
-  private readonly embeddings: OllamaEmbeddings;
+  private readonly embeddings: ZhipuAIEmbeddings;
   private readonly splitter: RecursiveCharacterTextSplitter;
 
   constructor(
@@ -56,13 +56,21 @@ export class KnowledgeService {
     private readonly knowledgeDataSource: DataSource,
     private readonly configService: ConfigService,
   ) {
-    this.embeddings = new OllamaEmbeddings({
-      model:
-        this.configService.get<string>('AI.EMBEDDING_MODEL') ??
-        'nomic-embed-text-v2-moe:latest',
-      baseUrl:
-        this.configService.get<string>('AI.OLLAMA_BASE_URL') ??
-        'http://127.0.0.1:11434',
+    const apiKey = this.configService.get<string>('AI.ZHIPU_API_KEY')?.trim();
+
+    if (!apiKey) {
+      throw new Error(
+        'AI.ZHIPU_API_KEY is required for Zhipu embeddings. Please fill it in the backend config.',
+      );
+    }
+
+    this.embeddings = new ZhipuAIEmbeddings({
+      modelName:
+        (this.configService.get<string>('AI.EMBEDDING_MODEL') as
+          | 'embedding-2'
+          | 'embedding-3'
+          | undefined) ?? 'embedding-3',
+      apiKey,
     });
 
     this.splitter = new RecursiveCharacterTextSplitter({
@@ -79,13 +87,17 @@ export class KnowledgeService {
     const docs = await this.loadDocuments(file);
 
     if (docs.length === 0 || docs.every((doc) => !doc.pageContent.trim())) {
-      throw new BadRequestException('文件内容为空，或暂时无法解析出可用文本');
+      throw new BadRequestException(
+        'File content is empty or could not be parsed into usable text.',
+      );
     }
 
     const splitDocs = await this.splitter.splitDocuments(docs);
 
     if (splitDocs.length === 0) {
-      throw new BadRequestException('文件切分后未生成可用片段');
+      throw new BadRequestException(
+        'No usable chunks were created after splitting the file.',
+      );
     }
 
     const chunkContents = splitDocs.map((doc) => doc.pageContent);
@@ -158,11 +170,13 @@ export class KnowledgeService {
     const file = await this.knowledgeFileRepository.findOne({ where: { id } });
 
     if (!file) {
-      throw new NotFoundException('知识库文件不存在');
+      throw new NotFoundException('Knowledge file not found.');
     }
 
     if (file.ownerUserId !== user.userId) {
-      throw new ForbiddenException('只能删除自己上传的知识库文件');
+      throw new ForbiddenException(
+        'You can only delete knowledge files that you uploaded.',
+      );
     }
 
     await this.knowledgeFileRepository.remove(file);
@@ -198,7 +212,7 @@ export class KnowledgeService {
 
     if (!trimmedQuestion) {
       return {
-        answer: '请先提供要检索的问题。',
+        answer: 'Please provide a question to search.',
         sources: [],
       };
     }
@@ -212,7 +226,7 @@ export class KnowledgeService {
 
     if (relevantDocs.length === 0) {
       return {
-        answer: '抱歉，知识库中没有找到相关信息。',
+        answer: 'No relevant information was found in the knowledge base.',
         sources: [],
       };
     }
@@ -221,13 +235,17 @@ export class KnowledgeService {
       .map((doc) => {
         const loc = doc.metadata.loc as DocumentLocation | undefined;
         const pageInfo =
-          typeof loc?.pageNumber === 'number' ? ` 第 ${loc.pageNumber} 页` : '';
+          typeof loc?.pageNumber === 'number'
+            ? ` / page ${loc.pageNumber}`
+            : '';
         const visibilityLabel =
           doc.metadata.visibility === KnowledgeVisibility.PUBLIC
-            ? '公开'
-            : '私人';
+            ? 'public'
+            : 'private';
 
-        return `[来源：${String(doc.metadata.filename ?? '未知来源')} / ${visibilityLabel}${pageInfo}]\n${doc.pageContent}`;
+        return `[Source: ${String(
+          doc.metadata.filename ?? 'Unknown source',
+        )} / ${visibilityLabel}${pageInfo}]\n${doc.pageContent}`;
       })
       .join('\n\n');
 
@@ -267,7 +285,7 @@ export class KnowledgeService {
         pageContent: String(row.content ?? ''),
         metadata: {
           ...metadata,
-          filename: String(row.filename ?? '未知来源'),
+          filename: String(row.filename ?? 'Unknown source'),
           ownerUsername: String(row.owner_username ?? ''),
           visibility: String(row.visibility ?? KnowledgeVisibility.PRIVATE),
           distance: Number(row.distance ?? 0),
@@ -310,14 +328,16 @@ export class KnowledgeService {
       ];
     }
 
-    throw new BadRequestException('不支持的文件类型');
+    throw new BadRequestException('Unsupported file type.');
   }
 
   private loadTextDocuments(file: Express.Multer.File): Document[] {
     const { text, encoding } = decodeKnowledgeTextBuffer(file.buffer);
 
     if (!text.trim()) {
-      throw new BadRequestException('文件内容为空，或编码无法识别');
+      throw new BadRequestException(
+        'File content is empty or the text encoding could not be detected.',
+      );
     }
 
     return [

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   HttpException,
+  Logger,
   Post,
   Res,
 } from '@nestjs/common';
@@ -19,8 +20,14 @@ import { AuthUser } from '@/auth/auth.types';
 import { AiService } from './ai.service';
 import { ChatMessage } from './tools';
 
+type SseResponse = Response & {
+  flush?: () => void;
+};
+
 @Controller('ai')
 export class AiController {
+  private readonly logger = new Logger(AiController.name);
+
   constructor(private readonly aiService: AiService) {}
 
   @Post('chat/stream')
@@ -30,14 +37,18 @@ export class AiController {
     @Res() res: Response,
   ) {
     if (!user) {
-      throw new BadRequestException('未识别到当前登录用户');
+      throw new BadRequestException(
+        'Current authenticated user was not found.',
+      );
     }
 
     const { messages } = body;
 
     try {
       if (!Array.isArray(messages)) {
-        res.status(400).json({ code: 400, message: 'messages 必须是数组' });
+        res
+          .status(400)
+          .json({ code: 400, message: 'messages must be an array.' });
         return;
       }
 
@@ -50,49 +61,113 @@ export class AiController {
         messages: this.convertMessages(messages),
       };
 
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
+      this.logger.log(
+        `chat stream started: userId=${user.sub}, messages=${messages.length}`,
+      );
 
-      const events = await agent.stream(input, {
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      const stream = await agent.stream(input, {
         streamMode: 'messages',
+        recursionLimit: 8,
       });
 
-      for await (const [token, metadata] of events) {
-        if (metadata?.langgraph_node === 'tools') {
+      let chunkCount = 0;
+      let emittedChunkCount = 0;
+      let totalChars = 0;
+
+      for await (const [messageChunk, metadata] of stream) {
+        chunkCount += 1;
+        const text = this.extractTextContent(messageChunk.content);
+
+        this.logger.log(
+          `stream chunk #${chunkCount} received: node=${metadata.langgraph_node ?? 'unknown'}, content=${JSON.stringify(messageChunk.content)}`,
+        );
+
+        if (metadata.langgraph_node !== 'llmCall') {
+          this.logger.log(
+            `stream chunk #${chunkCount} skipped: non-llm node ${metadata.langgraph_node ?? 'unknown'}`,
+          );
           continue;
         }
 
-        const content = token.contentBlocks || token.content;
-
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            res.write('event: message\n');
-            res.write(`data: ${JSON.stringify(block)}\n\n`);
-          }
-        } else if (typeof content === 'string' && content) {
-          res.write('event: message\n');
-          res.write(
-            `data: ${JSON.stringify({ type: 'text', text: content })}\n\n`,
+        if (!text) {
+          this.logger.warn(
+            `stream chunk #${chunkCount} skipped: empty text content`,
           );
+          continue;
         }
 
-        if (token.tool_calls && token.tool_calls.length > 0) {
-          res.write('event: message\n');
-          res.write(
-            `data: ${JSON.stringify({
-              type: 'tool',
-              tool_calls: token.tool_calls,
-            })}\n\n`,
-          );
-        }
+        emittedChunkCount += 1;
+        totalChars += text.length;
+        this.logger.log(
+          `stream text #${emittedChunkCount} emitted: node=${metadata.langgraph_node ?? 'unknown'}, chars=${text.length}, text=${JSON.stringify(text)}`,
+        );
+
+        this.writeSse(res, {
+          type: 'text',
+          text,
+        });
+      }
+
+      this.logger.log(
+        `chat stream finished: chunks=${chunkCount}, emitted=${emittedChunkCount}, chars=${totalChars}`,
+      );
+
+      if (emittedChunkCount === 0) {
+        this.logger.warn('chat stream finished with zero emitted text chunks');
       }
 
       res.write('data: [DONE]\n\n');
       res.end();
     } catch (err) {
+      this.logger.error(
+        `chat stream failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        err instanceof Error ? err.stack : undefined,
+      );
       this.handleError(err, res);
     }
+  }
+
+  private writeSse(res: Response, payload: Record<string, unknown>) {
+    res.write('event: message\n');
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    (res as SseResponse).flush?.();
+  }
+
+  private extractTextContent(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (!Array.isArray(content)) {
+      return '';
+    }
+
+    return content.map((item) => this.extractTextContentPart(item)).join('');
+  }
+
+  private extractTextContentPart(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (!content || typeof content !== 'object') {
+      return '';
+    }
+
+    const block = content as Record<string, unknown>;
+
+    if (typeof block.text === 'string') {
+      return block.text;
+    }
+
+    return '';
   }
 
   private convertMessages(messages: ChatMessage[]): BaseMessage[] {
@@ -127,7 +202,7 @@ export class AiController {
     }
 
     let status = 500;
-    let message = 'AI 调用失败';
+    let message = 'AI request failed.';
 
     if (err instanceof Error) {
       message = err.message;

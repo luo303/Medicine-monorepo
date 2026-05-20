@@ -3,11 +3,6 @@ import { z } from 'zod';
 import { ManufacturerService } from '../../basic/manufacturer/manufacturer.service';
 import { Manufacturer } from '@/entity/Manufacturer';
 
-/**
- * 创建生产企业相关的 AI 工具
- * @param manufacturerService 生产企业服务
- * @returns 生产企业相关的工具数组
- */
 export function createManufacturerTools(
   manufacturerService: ManufacturerService,
 ) {
@@ -21,6 +16,7 @@ export function createManufacturerTools(
                 m.name.includes(keyword) || m.city?.includes(keyword),
             )
           : manufacturers;
+
         return JSON.stringify(
           filtered.map((m: Manufacturer) => ({
             approval_no: m.approval_no,
@@ -35,9 +31,12 @@ export function createManufacturerTools(
       {
         name: 'query_manufacturer_list',
         description:
-          '查询生产企业目录列表，获取所有生产企业信息，可以按名称或城市筛选',
+          'Query the manufacturer catalog and return matching manufacturers. Optionally filter by manufacturer name or city.',
         schema: z.object({
-          keyword: z.string().optional().describe('可选的企业名称或城市关键词'),
+          keyword: z
+            .string()
+            .optional()
+            .describe('Optional manufacturer name or city keyword.'),
         }),
       },
     ),

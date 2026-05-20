@@ -13,16 +13,19 @@ export function createInventoryTools(
           inventoryRepository.createQueryBuilder('inventory');
         queryBuilder.leftJoinAndSelect('inventory.drug', 'drug');
         queryBuilder.leftJoinAndSelect('inventory.warehouse', 'warehouse');
+
         if (drug_name) {
           queryBuilder.andWhere('drug.name LIKE :name', {
             name: `%${drug_name}%`,
           });
         }
+
         if (warehouse_id) {
           queryBuilder.andWhere('warehouse.id = :warehouse_id', {
             warehouse_id,
           });
         }
+
         const inventories = await queryBuilder.getMany();
         return JSON.stringify(
           inventories.map((i: Inventory) => ({
@@ -34,10 +37,14 @@ export function createInventoryTools(
       },
       {
         name: 'query_inventory',
-        description: '查询药品库存信息',
+        description:
+          'Query inventory records. Use drug_name and optionally warehouse_id to narrow the results.',
         schema: z.object({
-          drug_name: z.string().describe('药品名称'),
-          warehouse_id: z.number().optional().describe('可选的仓库 ID'),
+          drug_name: z.string().describe('Drug name.'),
+          warehouse_id: z
+            .number()
+            .optional()
+            .describe('Optional warehouse ID.'),
         }),
       },
     ),

@@ -13,7 +13,6 @@ interface db {
 
 interface AI {
   ZHIPU_API_KEY?: string;
-  OLLAMA_BASE_URL: string;
   EMBEDDING_MODEL: string;
   CHAT_MODEL: string;
 }

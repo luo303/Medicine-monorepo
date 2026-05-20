@@ -14,6 +14,7 @@ export function createWarehouseTools(warehouseService: WarehouseService) {
                 w.name.includes(keyword) || w.code.includes(keyword),
             )
           : warehouses;
+
         return JSON.stringify(
           filtered.map((w: Warehouse) => ({
             id: w.id,
@@ -26,9 +27,13 @@ export function createWarehouseTools(warehouseService: WarehouseService) {
       },
       {
         name: 'query_warehouse_list',
-        description: '查询仓库列表，获取所有仓库信息',
+        description:
+          'Query the warehouse list and return matching warehouses. Optionally filter by warehouse name or code.',
         schema: z.object({
-          keyword: z.string().optional().describe('可选的仓库名称关键词'),
+          keyword: z
+            .string()
+            .optional()
+            .describe('Optional warehouse name or code keyword.'),
         }),
       },
     ),

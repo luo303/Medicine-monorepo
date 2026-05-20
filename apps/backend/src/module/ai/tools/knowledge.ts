@@ -13,7 +13,7 @@ export function createKnowledgeTool(
         const result = await knowledgeService.query(question, user, 3);
 
         if (result.sources.length === 0) {
-          return '知识库中没有相关信息';
+          return 'No relevant information was found in the knowledge base.';
         }
 
         return result.answer;
@@ -21,9 +21,11 @@ export function createKnowledgeTool(
       {
         name: 'query_knowledge_base',
         description:
-          '从知识库文档中检索信息来回答问题，会自动按当前登录用户过滤私人和公共文档。',
+          'Search uploaded knowledge-base documents and return relevant passages for answering the question. The tool already filters private and public documents for the current user.',
         schema: z.object({
-          question: z.string().describe('要查询的问题'),
+          question: z
+            .string()
+            .describe('The question to search in the knowledge base.'),
         }),
       },
     ),

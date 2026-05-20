@@ -45,41 +45,21 @@ export interface ChatResponse {
   usedTools: ToolUsage[];
 }
 
-/**
- * LangChain Agent Stream Metadata
- */
-export interface AgentMetadata {
-  langgraph_node: string;
-  [key: string]: any;
+export interface AgentMessageChunk {
+  content: unknown;
 }
 
-/**
- * LangChain Agent Token (Message)
- * 不直接继承 BaseMessage 以避免属性冲突
- */
-export interface AgentToken {
-  content: string | any[];
-  contentBlocks?: Array<{
-    type: string;
-    text?: string;
-    reasoning?: string;
-    [key: string]: any;
-  }>;
-  tool_calls?: Array<{
-    name: string;
-    args: Record<string, any>;
-    id?: string;
-  }>;
-  additional_kwargs?: Record<string, any>;
-  [key: string]: any;
+export interface AgentStreamMetadata {
+  langgraph_node?: string;
+  tags?: string[];
+  [key: string]: unknown;
 }
 
-/**
- * Interface for the compiled LangChain Agent
- */
+export type AgentMessageStreamChunk = [AgentMessageChunk, AgentStreamMetadata];
+
 export interface IAgent {
   stream(
     input: { messages: BaseMessage[] },
-    options?: { streamMode?: string },
-  ): Promise<AsyncIterable<[AgentToken, AgentMetadata]>>;
+    options?: { streamMode?: 'messages'; recursionLimit?: number },
+  ): Promise<AsyncIterable<AgentMessageStreamChunk>>;
 }
