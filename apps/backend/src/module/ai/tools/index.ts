@@ -8,3 +8,4 @@ export * from './purchaseOrder.tools';
 export * from './salesOrder.tools';
 export * from './storageLocation.tools';
 export * from './knowledge';
+export * from './writeRequest.tools';

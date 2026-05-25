@@ -29,8 +29,16 @@ export function createInventoryTools(
         const inventories = await queryBuilder.getMany();
         return JSON.stringify(
           inventories.map((i: Inventory) => ({
+            id: i.id,
+            drugApprovalNo: i.drugApprovalNo,
+            manufacturerApprovalNo: i.manufacturerApprovalNo,
             drug_name: i.drug?.name || i.drug_name,
+            warehouse_code: i.warehouse_code,
             warehouse_name: i.warehouse?.name || i.warehouse_code,
+            location_code: i.location_code,
+            production_date: i.production_date,
+            expiry_date: i.expiry_date,
+            batch_no: i.batch_no,
             stock_quantity: i.quantity,
           })),
         );

@@ -9,5 +9,6 @@ import { MedicalInstitution } from '@/entity/MedicalInstitution';
   imports: [TypeOrmModule.forFeature([MedicalInstitution])],
   providers: [MedicalInstitutionService],
   controllers: [MedicalInstitutionController],
+  exports: [MedicalInstitutionService],
 })
 export class MedicalInstitutionModule {}
