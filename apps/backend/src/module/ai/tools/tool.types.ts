@@ -47,6 +47,20 @@ export interface ChatResponse {
 
 export interface AgentMessageChunk {
   content: unknown;
+  additional_kwargs?: Record<string, unknown>;
+  response_metadata?: Record<string, unknown>;
+  id?: string;
+  tool_calls?: Array<{
+    id?: string;
+    name: string;
+    args: Record<string, unknown>;
+  }>;
+  tool_call_chunks?: Array<{
+    id?: string;
+    name?: string;
+    args?: string;
+    index?: number;
+  }>;
 }
 
 export interface AgentStreamMetadata {
@@ -57,13 +71,30 @@ export interface AgentStreamMetadata {
 
 export type AgentMessageStreamChunk = [AgentMessageChunk, AgentStreamMetadata];
 
-export type AgentStreamMode = 'messages' | 'updates';
+export type AgentToolLifecycleEvent =
+  | 'on_tool_start'
+  | 'on_tool_event'
+  | 'on_tool_end'
+  | 'on_tool_error';
+
+export interface AgentToolStreamChunk {
+  event: AgentToolLifecycleEvent;
+  name?: string;
+  toolCallId?: string;
+  input?: unknown;
+  data?: unknown;
+  output?: unknown;
+  error?: unknown;
+}
+
+export type AgentStreamMode = 'messages' | 'updates' | 'tools';
 
 export type AgentUpdatesStreamChunk = Record<string, Record<string, unknown>>;
 
 export type AgentMultiStreamChunk =
   | ['messages', AgentMessageStreamChunk]
-  | ['updates', AgentUpdatesStreamChunk];
+  | ['updates', AgentUpdatesStreamChunk]
+  | ['tools', AgentToolStreamChunk];
 
 export type MutationEntity =
   | 'drug'

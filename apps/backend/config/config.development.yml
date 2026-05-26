@@ -17,4 +17,7 @@ KNOWLEDGE_DB:
 AI:
   ZHIPU_API_KEY: '0151876f96774cb6a8e58f29262abeff.zyDCSJEZpKnZBoz5'
   EMBEDDING_MODEL: 'embedding-3'
-  CHAT_MODEL: 'glm-4.7-flash'
+  CHAT_MODEL: 'glm-5-turbo'
+  THINKING_ENABLED: false
+  THINKING_TYPE: 'enabled'
+  TOOL_STREAM_ENABLED: true

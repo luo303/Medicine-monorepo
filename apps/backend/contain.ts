@@ -13,8 +13,12 @@ interface db {
 
 interface AI {
   ZHIPU_API_KEY?: string;
+  ZHIPU_BASE_URL?: string;
   EMBEDDING_MODEL: string;
   CHAT_MODEL: string;
+  THINKING_ENABLED?: boolean;
+  THINKING_TYPE?: string;
+  TOOL_STREAM_ENABLED?: boolean;
 }
 
 export interface config {

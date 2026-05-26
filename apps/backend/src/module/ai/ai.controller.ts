@@ -22,6 +22,7 @@ import {
   AgentInterruptState,
   AgentMessageStreamChunk,
   AgentMultiStreamChunk,
+  AgentToolStreamChunk,
   ApprovalDecision,
   ApprovalInterruptPayload,
   ChatMessage,
@@ -40,6 +41,21 @@ interface ChatStreamBody {
 interface ReviewBody {
   threadId: string;
   decision: ApprovalDecision;
+}
+
+interface StreamedToolCall {
+  streamKey: string;
+  turnKey: string;
+  toolCallId?: string;
+  name?: string;
+  argsText: string;
+  status: 'streaming' | 'called' | 'completed' | 'error';
+}
+
+interface ToolCallRegistry {
+  callsByKey: Map<string, StreamedToolCall>;
+  keyByToolCallId: Map<string, string>;
+  emittedToolResultIds: Set<string>;
 }
 
 @Controller('ai')
@@ -84,7 +100,7 @@ export class AiController {
       this.prepareSse(res, effectiveThreadId);
 
       const stream = await agent.stream(input, {
-        streamMode: ['updates', 'messages'],
+        streamMode: ['updates', 'messages', 'tools'],
         recursionLimit: 8,
         configurable: {
           thread_id: effectiveThreadId,
@@ -188,21 +204,44 @@ export class AiController {
     threadId: string,
   ) {
     const emittedInterruptIds = new Set<string>();
+    const toolCallRegistry: ToolCallRegistry = {
+      callsByKey: new Map(),
+      keyByToolCallId: new Map(),
+      emittedToolResultIds: new Set(),
+    };
 
     for await (const chunk of stream) {
       if (Array.isArray(chunk) && typeof chunk[0] === 'string') {
         if (chunk[0] === 'messages') {
-          this.handleMessageChunk(res, chunk[1] as AgentMessageStreamChunk);
+          this.handleMessageChunk(
+            res,
+            chunk[1] as AgentMessageStreamChunk,
+            toolCallRegistry,
+          );
         }
 
         if (chunk[0] === 'updates') {
-          this.handleUpdatesChunk(res, chunk[1], threadId, emittedInterruptIds);
+          this.handleUpdatesChunk(
+            res,
+            chunk[1],
+            threadId,
+            emittedInterruptIds,
+            toolCallRegistry,
+          );
+        }
+
+        if (chunk[0] === 'tools') {
+          this.handleToolsChunk(res, chunk[1], toolCallRegistry);
         }
 
         continue;
       }
 
-      this.handleMessageChunk(res, chunk as AgentMessageStreamChunk);
+      this.handleMessageChunk(
+        res,
+        chunk as AgentMessageStreamChunk,
+        toolCallRegistry,
+      );
     }
 
     return {
@@ -210,11 +249,26 @@ export class AiController {
     };
   }
 
-  private handleMessageChunk(res: Response, chunk: AgentMessageStreamChunk) {
+  private handleMessageChunk(
+    res: Response,
+    chunk: AgentMessageStreamChunk,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
     const [messageChunk, metadata] = chunk;
 
     if (metadata.langgraph_node !== 'llmCall') {
       return;
+    }
+
+    this.emitToolCallEvents(res, chunk, toolCallRegistry);
+
+    const reasoning = this.extractReasoningContent(messageChunk);
+
+    if (reasoning) {
+      this.writeSse(res, {
+        type: 'reasoning',
+        text: reasoning,
+      });
     }
 
     const text = this.extractTextContent(messageChunk.content);
@@ -234,6 +288,7 @@ export class AiController {
     updates: Record<string, Record<string, unknown>>,
     threadId: string,
     emittedInterruptIds: Set<string>,
+    toolCallRegistry: ToolCallRegistry,
   ) {
     this.emitInterruptEvents(
       res,
@@ -253,7 +308,212 @@ export class AiController {
         threadId,
         emittedInterruptIds,
       );
+
+      this.emitToolResultEvents(res, update, toolCallRegistry);
     }
+  }
+
+  private emitToolCallEvents(
+    res: Response,
+    chunk: AgentMessageStreamChunk,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
+    const [messageChunk, metadata] = chunk;
+    const turnKey = this.deriveToolTurnKey(messageChunk, metadata);
+    const toolCallChunks = Array.isArray(messageChunk.tool_call_chunks)
+      ? messageChunk.tool_call_chunks
+      : [];
+
+    for (const toolCallChunk of toolCallChunks) {
+      const streamKey = this.deriveToolStreamKey(turnKey, toolCallChunk);
+      const previous = toolCallRegistry.callsByKey.get(streamKey);
+      const nextState: StreamedToolCall = {
+        streamKey,
+        turnKey,
+        toolCallId: toolCallChunk.id || previous?.toolCallId,
+        name: toolCallChunk.name || previous?.name,
+        argsText: `${previous?.argsText || ''}${toolCallChunk.args || ''}`,
+        status: 'streaming',
+      };
+
+      toolCallRegistry.callsByKey.set(streamKey, nextState);
+
+      if (nextState.toolCallId) {
+        toolCallRegistry.keyByToolCallId.set(nextState.toolCallId, streamKey);
+      }
+
+      this.writeSse(res, {
+        type: 'tool_call',
+        call: {
+          streamKey,
+          toolCallId: nextState.toolCallId,
+          name: nextState.name,
+          argsText: nextState.argsText,
+          argsTextDelta: toolCallChunk.args || '',
+          status: nextState.status,
+        },
+      });
+    }
+
+    const parsedToolCalls = Array.isArray(messageChunk.tool_calls)
+      ? messageChunk.tool_calls
+      : [];
+
+    parsedToolCalls.forEach((toolCall, index) => {
+      const byIdKey = toolCall.id
+        ? toolCallRegistry.keyByToolCallId.get(toolCall.id)
+        : undefined;
+      const streamKey = byIdKey || `${turnKey}:${index}`;
+      const previous = toolCallRegistry.callsByKey.get(streamKey);
+      const argsText =
+        previous?.argsText || JSON.stringify(toolCall.args, null, 2);
+      const nextState: StreamedToolCall = {
+        streamKey,
+        turnKey,
+        toolCallId: toolCall.id || previous?.toolCallId,
+        name: toolCall.name || previous?.name,
+        argsText,
+        status: 'called',
+      };
+
+      toolCallRegistry.callsByKey.set(streamKey, nextState);
+
+      if (nextState.toolCallId) {
+        toolCallRegistry.keyByToolCallId.set(nextState.toolCallId, streamKey);
+      }
+
+      this.writeSse(res, {
+        type: 'tool_call',
+        call: {
+          streamKey,
+          toolCallId: nextState.toolCallId,
+          name: nextState.name,
+          argsText,
+          args: toolCall.args,
+          status: nextState.status,
+        },
+      });
+    });
+  }
+
+  private emitToolResultEvents(
+    res: Response,
+    update: Record<string, unknown>,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
+    const messages = this.extractToolMessages(update.messages);
+
+    for (const message of messages) {
+      const dedupeKey = `${message.tool_call_id}:${String(message.status || 'success')}`;
+
+      if (toolCallRegistry.emittedToolResultIds.has(dedupeKey)) {
+        continue;
+      }
+
+      toolCallRegistry.emittedToolResultIds.add(dedupeKey);
+      const streamKey =
+        toolCallRegistry.keyByToolCallId.get(message.tool_call_id) ||
+        message.tool_call_id;
+      const previous = toolCallRegistry.callsByKey.get(streamKey);
+      const nextStatus = message.status === 'error' ? 'error' : 'completed';
+
+      if (previous) {
+        toolCallRegistry.callsByKey.set(streamKey, {
+          ...previous,
+          status: nextStatus,
+        });
+      }
+
+      this.writeSse(res, {
+        type: 'tool_result',
+        result: {
+          streamKey,
+          toolCallId: message.tool_call_id,
+          name: previous?.name,
+          status: nextStatus,
+          content: this.stringifyStructuredPayload(message.content),
+        },
+      });
+    }
+  }
+
+  private handleToolsChunk(
+    res: Response,
+    chunk: AgentToolStreamChunk,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
+    const streamKey = this.resolveToolStreamKeyFromLifecycle(
+      chunk,
+      toolCallRegistry,
+    );
+    const previous = toolCallRegistry.callsByKey.get(streamKey);
+    const toolCallId = chunk.toolCallId || previous?.toolCallId;
+    const name = chunk.name || previous?.name;
+
+    if (toolCallId) {
+      toolCallRegistry.keyByToolCallId.set(toolCallId, streamKey);
+    }
+
+    if (chunk.event === 'on_tool_start' || chunk.event === 'on_tool_event') {
+      const nextState: StreamedToolCall = {
+        streamKey,
+        turnKey: previous?.turnKey || 'tool',
+        toolCallId,
+        name,
+        argsText:
+          previous?.argsText ||
+          this.stringifyStructuredPayload(chunk.input) ||
+          '',
+        status: chunk.event === 'on_tool_start' ? 'called' : 'streaming',
+      };
+
+      toolCallRegistry.callsByKey.set(streamKey, nextState);
+      this.writeSse(res, {
+        type: 'tool_call',
+        call: {
+          streamKey,
+          toolCallId,
+          name,
+          argsText: nextState.argsText,
+          status: nextState.status,
+          progressText:
+            chunk.event === 'on_tool_event'
+              ? this.stringifyStructuredPayload(chunk.data)
+              : undefined,
+        },
+      });
+
+      return;
+    }
+
+    const nextStatus = chunk.event === 'on_tool_error' ? 'error' : 'completed';
+    const dedupeKey = `${toolCallId || streamKey}:${nextStatus}`;
+
+    if (toolCallRegistry.emittedToolResultIds.has(dedupeKey)) {
+      return;
+    }
+
+    toolCallRegistry.emittedToolResultIds.add(dedupeKey);
+
+    if (previous) {
+      toolCallRegistry.callsByKey.set(streamKey, {
+        ...previous,
+        status: nextStatus,
+      });
+    }
+
+    this.writeSse(res, {
+      type: 'tool_result',
+      result: {
+        streamKey,
+        toolCallId,
+        name,
+        status: nextStatus,
+        content: this.stringifyStructuredPayload(
+          chunk.event === 'on_tool_error' ? chunk.error : chunk.output,
+        ),
+      },
+    });
   }
 
   private extractInterrupts(value: unknown) {
@@ -370,6 +630,173 @@ export class AiController {
     }
 
     return '';
+  }
+
+  private extractReasoningContent(chunk: AgentMessageStreamChunk[0]): string {
+    const reasoning = chunk.additional_kwargs?.reasoning_content;
+
+    if (typeof reasoning === 'string') {
+      return reasoning;
+    }
+
+    if (Array.isArray(reasoning)) {
+      return reasoning
+        .map((item) => this.extractReasoningContentPart(item))
+        .join('');
+    }
+
+    return '';
+  }
+
+  private extractReasoningContentPart(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (!content || typeof content !== 'object') {
+      return '';
+    }
+
+    const block = content as Record<string, unknown>;
+
+    if (typeof block.text === 'string') {
+      return block.text;
+    }
+
+    return '';
+  }
+
+  private deriveToolTurnKey(
+    messageChunk: AgentMessageStreamChunk[0],
+    metadata: AgentMessageStreamChunk[1],
+  ) {
+    const metadataKeys = [
+      'langgraph_checkpoint_ns',
+      'checkpoint_ns',
+      'run_id',
+      'langgraph_run_id',
+    ];
+
+    if (typeof messageChunk.id === 'string' && messageChunk.id.trim()) {
+      return messageChunk.id;
+    }
+
+    for (const key of metadataKeys) {
+      const value = metadata[key];
+
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+    }
+
+    return String(metadata.langgraph_node || 'llmCall');
+  }
+
+  private deriveToolStreamKey(
+    turnKey: string,
+    toolCallChunk: NonNullable<
+      AgentMessageStreamChunk[0]['tool_call_chunks']
+    >[number],
+  ) {
+    return `${turnKey}:${toolCallChunk.index ?? 0}`;
+  }
+
+  private resolveToolStreamKeyFromLifecycle(
+    chunk: AgentToolStreamChunk,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
+    if (chunk.toolCallId) {
+      const existing = toolCallRegistry.keyByToolCallId.get(chunk.toolCallId);
+
+      if (existing) {
+        return existing;
+      }
+    }
+
+    const pendingByName = this.findPendingToolStreamKeyByName(
+      chunk.name,
+      toolCallRegistry,
+    );
+
+    if (pendingByName) {
+      return pendingByName;
+    }
+
+    return chunk.toolCallId || `tool:${chunk.name || 'unknown'}`;
+  }
+
+  private findPendingToolStreamKeyByName(
+    name: string | undefined,
+    toolCallRegistry: ToolCallRegistry,
+  ) {
+    if (!name) {
+      return undefined;
+    }
+
+    const pendingCalls = Array.from(
+      toolCallRegistry.callsByKey.values(),
+    ).reverse();
+    const matched = pendingCalls.find((call) => {
+      return (
+        call.name === name &&
+        !call.toolCallId &&
+        call.status !== 'completed' &&
+        call.status !== 'error'
+      );
+    });
+
+    return matched?.streamKey;
+  }
+
+  private stringifyStructuredPayload(value: unknown): string {
+    const text = this.extractTextContent(value);
+
+    if (text) {
+      return text;
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (value === undefined || value === null) {
+      return '';
+    }
+
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private extractToolMessages(value: unknown): ToolMessage[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is ToolMessage => {
+      if (item instanceof ToolMessage) {
+        return true;
+      }
+
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      const candidate = item as Record<string, unknown> & {
+        getType?: () => string;
+      };
+
+      if (candidate.type === 'tool') {
+        return typeof candidate.tool_call_id === 'string';
+      }
+
+      return (
+        candidate.getType?.() === 'tool' &&
+        typeof candidate.tool_call_id === 'string'
+      );
+    });
   }
 
   private convertMessages(messages: ChatMessage[]): BaseMessage[] {

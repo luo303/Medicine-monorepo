@@ -18,6 +18,7 @@ import {
   SystemMessage,
   ToolMessage,
 } from '@langchain/core/messages';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Inventory } from '@/entity/Inventory';
@@ -132,12 +133,36 @@ export class AiService {
     const baseURL =
       this.configService.get<string>('AI.ZHIPU_BASE_URL')?.trim() ||
       'https://open.bigmodel.cn/api/paas/v4/';
+    const thinkingEnabled = this.readBooleanConfig('AI.THINKING_ENABLED');
+    const toolStreamEnabled = this.readBooleanConfig('AI.TOOL_STREAM_ENABLED');
+    const thinkingType =
+      this.configService.get<string>('AI.THINKING_TYPE')?.trim() || 'enabled';
 
     this.model = new ChatOpenAI({
       model: this.configService.get<string>('AI.CHAT_MODEL') ?? 'glm-5-turbo',
       apiKey,
       temperature: 0,
+      streaming: true,
       streamUsage: false,
+      modelKwargs:
+        thinkingEnabled || toolStreamEnabled
+          ? {
+              ...(toolStreamEnabled
+                ? {
+                    tool_stream: true,
+                  }
+                : {}),
+              ...(thinkingEnabled
+                ? {
+                    extra_body: {
+                      thinking: {
+                        type: thinkingType,
+                      },
+                    },
+                  }
+                : {}),
+            }
+          : undefined,
       configuration: {
         baseURL,
       },
@@ -176,11 +201,11 @@ export class AiService {
       'Keep answers concise, direct, and actionable.',
     ].join('\n');
 
-    const llmCall = async (state: AiState) => {
-      const result = await llmWithTools.invoke([
-        new SystemMessage(systemPrompt),
-        ...state.messages,
-      ]);
+    const llmCall = async (state: AiState, config?: RunnableConfig) => {
+      const result = await llmWithTools.invoke(
+        [new SystemMessage(systemPrompt), ...state.messages],
+        config,
+      );
 
       return {
         messages: [result],
@@ -366,7 +391,7 @@ export class AiService {
     const agent = this.createAgent(user);
 
     return agent.stream(new Command({ resume: request.decision }), {
-      streamMode: ['updates', 'messages'],
+      streamMode: ['updates', 'messages', 'tools'],
       recursionLimit: 8,
       configurable: {
         thread_id: request.threadId,
@@ -843,5 +868,19 @@ export class AiService {
     }
 
     return value as Record<string, unknown>;
+  }
+
+  private readBooleanConfig(key: string) {
+    const value = this.configService.get<unknown>(key);
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim().toLowerCase() === 'true';
+    }
+
+    return false;
   }
 }
