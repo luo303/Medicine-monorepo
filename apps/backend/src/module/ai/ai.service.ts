@@ -54,7 +54,8 @@ import {
   WRITE_TOOL_DEFINITIONS,
   WRITE_TOOL_NAMES,
 } from './tools';
-
+import dotenv from 'dotenv';
+dotenv.config();
 const AI_STATE = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     reducer: (left, right) => left.concat(right),
@@ -133,7 +134,7 @@ export class AiService {
       'https://open.bigmodel.cn/api/paas/v4/';
 
     this.model = new ChatOpenAI({
-      model: this.configService.get<string>('AI.CHAT_MODEL') ?? 'glm-4.7-flash',
+      model: this.configService.get<string>('AI.CHAT_MODEL') ?? 'glm-5-turbo',
       apiKey,
       temperature: 0,
       streamUsage: false,
