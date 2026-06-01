@@ -21,5 +21,5 @@ export const knowledge = {
 
 export default new DataSource({
   ...knowledge,
-  migrations: ['src/migrations/knowledge/**/*{.ts,.js}'],
+  migrations: ['src/migrations/knowledge/*{.ts,.js}'],
 } as DataSourceOptions);

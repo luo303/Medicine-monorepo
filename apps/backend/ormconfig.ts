@@ -44,5 +44,5 @@ export const basic = {
 } as TypeOrmModuleOptions;
 export default new DataSource({
   ...basic,
-  migrations: ['src/migrations/**/*{.ts,.js}'],
+  migrations: ['src/migrations/*{.ts,.js}'],
 } as DataSourceOptions);
